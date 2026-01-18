@@ -3,7 +3,9 @@ use phantomcodec::simd::{compute_deltas, reconstruct_from_deltas, sum_abs_deltas
 use phantomcodec::{compress_spike_counts, decompress_spike_counts};
 
 #[cfg(feature = "cortex-m-dsp")]
-use phantomcodec::simd::cortex_m_dsp::{decode_fixed_4bit, encode_fixed_4bit};
+use phantomcodec::simd::cortex_m_dsp::{
+    decode_fixed_4bit as decode_4bit, encode_fixed_4bit as encode_4bit,
+};
 
 /// Benchmark compression of neural spike data
 fn bench_compress(c: &mut Criterion) {
