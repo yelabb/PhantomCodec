@@ -86,7 +86,7 @@ fn bench_decompress(c: &mut Criterion) {
 
 /// Benchmark compression ratio
 fn bench_compression_ratio(c: &mut Criterion) {
-    let mut group = c.benchmark_group("compression_ratio");
+    let group = c.benchmark_group("compression_ratio");
     
     for &num_channels in &[128, 256, 512, 1024] {
         let mut spike_counts = vec![0i32; num_channels];
@@ -150,8 +150,8 @@ fn bench_dense_data(c: &mut Criterion) {
     // Generate high-entropy random spike counts (0-15 range)
     let mut rng = Pcg32::new(42);
     let mut spike_counts = vec![0i32; num_channels];
-    for i in 0..num_channels {
-        spike_counts[i] = (rng.next() % 16) as i32; // Random 0-15
+    for count in spike_counts.iter_mut().take(num_channels) {
+        *count = (rng.next() % 16) as i32; // Random 0-15
     }
     
     let mut compressed = vec![0u8; num_channels * 8];
@@ -267,12 +267,12 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
         }
     }
     
-    for &num_channels in &[128, 256, 512, 1024] {
+    for &num_channels in &[128_usize, 256, 512, 1024] {
         // Simulate neural delta data (small values that fit in 4-bit quantized)
         let deltas: Vec<i32> = (0..num_channels)
             .map(|i| ((i as i32 % 15) - 7) * 256) // Range: -7*256 to +7*256
             .collect();
-        let mut encoded = vec![0u8; (num_channels + 1) / 2];
+        let mut encoded = vec![0u8; num_channels.div_ceil(2)];
         let mut decoded = vec![0i32; num_channels];
         
         group.bench_with_input(

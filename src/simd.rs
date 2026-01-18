@@ -273,6 +273,7 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
 // Target latency: ~75µs for 1024 channels (Phase 1 of INSPIRATION.md roadmap)
 #[cfg(feature = "cortex-m-dsp")]
 pub mod cortex_m_dsp {
+    #[cfg(target_arch = "arm")]
     use core::arch::arm::{__qadd16, __qsub16, __sadd16, __ssub16, __usad8};
 
     /// Pack two i16 values into a single u32 for dual SIMD operations
@@ -330,6 +331,7 @@ pub mod cortex_m_dsp {
     /// compute_deltas_dsp(&input, &mut output);
     /// // output = [10, 3, -2, 3, -2, 3]
     /// ```
+    #[cfg(target_arch = "arm")]
     pub fn compute_deltas_dsp(input: &[i32], output: &mut [i32]) {
         assert_eq!(input.len(), output.len(), "Input and output must be same length");
 
@@ -380,6 +382,12 @@ pub mod cortex_m_dsp {
         }
     }
 
+    /// Fallback implementation for non-ARM targets
+    #[cfg(not(target_arch = "arm"))]
+    pub fn compute_deltas_dsp(input: &[i32], output: &mut [i32]) {
+        super::compute_deltas(input, output);
+    }
+
     /// Parallel delta reconstruction using ARM SADD16 (dual 16-bit addition)
     ///
     /// Reconstructs original values from deltas using prefix sum.
@@ -387,6 +395,7 @@ pub mod cortex_m_dsp {
     ///
     /// Note: Prefix sum has data dependencies, so parallelism is limited.
     /// We still get benefit from reduced instruction count per sample.
+    #[cfg(target_arch = "arm")]
     pub fn reconstruct_from_deltas_dsp(deltas: &[i32], output: &mut [i32]) {
         assert_eq!(deltas.len(), output.len(), "Input and output must be same length");
 
@@ -415,12 +424,19 @@ pub mod cortex_m_dsp {
         }
     }
 
+    /// Fallback implementation for non-ARM targets
+    #[cfg(not(target_arch = "arm"))]
+    pub fn reconstruct_from_deltas_dsp(deltas: &[i32], output: &mut [i32]) {
+        super::reconstruct_from_deltas(deltas, output);
+    }
+
     /// Sum of absolute deltas using ARM USAD8 (unsigned sum of absolute differences)
     ///
     /// USAD8 computes sum of absolute differences of 4 bytes in parallel.
     /// For 16-bit data, we process 2 samples at a time.
     ///
     /// Returns sum of |delta[i]| for Rice parameter selection.
+    #[cfg(target_arch = "arm")]
     pub fn sum_abs_deltas_dsp(deltas: &[i32], n: usize) -> u32 {
         let n = n.min(deltas.len());
 
@@ -458,6 +474,12 @@ pub mod cortex_m_dsp {
         }
 
         total
+    }
+
+    /// Fallback implementation for non-ARM targets
+    #[cfg(not(target_arch = "arm"))]
+    pub fn sum_abs_deltas_dsp(deltas: &[i32], n: usize) -> u32 {
+        super::sum_abs_deltas(deltas, n)
     }
 
     /// Fast 4-bit fixed-width encoding for ultra-low-latency mode
@@ -771,6 +793,6 @@ mod cortex_m_dsp_tests {
 
         let deltas = [10, -5, 3, -8, 0, 7, -2, 1];
         let sum = sum_abs_scalar(&deltas);
-        assert_eq!(sum, 10 + 5 + 3 + 8 + 0 + 7 + 2 + 1);
+        assert_eq!(sum, 36);
     }
 }
