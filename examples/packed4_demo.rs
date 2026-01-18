@@ -13,10 +13,10 @@ fn main() {
 
     // Simulate 1024-channel neural data (typical BCI application)
     let mut neural_data = [0i32; 1024];
-    for i in 0..1024 {
+    for (i, sample) in neural_data.iter_mut().enumerate() {
         // Simulate sparse spiking activity with values in multiples of 256
         // (Packed4 quantizes to 256-unit granularity)
-        neural_data[i] = if i % 100 < 5 {
+        *sample = if i % 100 < 5 {
             ((i % 10) as i32) * 256
         } else {
             0

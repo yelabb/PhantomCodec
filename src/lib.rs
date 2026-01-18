@@ -547,7 +547,7 @@ mod tests {
         
         // Verify compression ratio (should be ~50%)
         let header_size = 8;
-        let expected_payload = (original.len() + 1) / 2;
+        let expected_payload = original.len().div_ceil(2);
         assert_eq!(size, header_size + expected_payload);
 
         let count = decompress_packed4(&compressed[..size], &mut decompressed, &mut workspace)
@@ -555,9 +555,9 @@ mod tests {
         assert_eq!(count, 8);
 
         // All values should be quantized to multiples of 256 (due to delta quantization)
-        for i in 0..original.len() {
+        for &value in decompressed.iter().take(original.len()) {
             assert_eq!(
-                decompressed[i] % 256,
+                value % 256,
                 0,
                 "Packed4 quantizes to 256-unit granularity"
             );

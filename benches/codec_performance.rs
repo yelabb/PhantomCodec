@@ -277,13 +277,13 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
             &num_channels,
             |b, _| {
                 b.iter(|| {
-                    encode_4bit(black_box(&deltas), black_box(&mut encoded));
+                    encode_4bit(black_box(&deltas), black_box(&mut encoded)).unwrap();
                 });
             },
         );
 
         // Pre-encode for decode benchmark
-        encode_4bit(&deltas, &mut encoded);
+        encode_4bit(&deltas, &mut encoded).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("decode_4bit", num_channels),
@@ -294,7 +294,7 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
                         black_box(&encoded),
                         black_box(num_channels),
                         black_box(&mut decoded),
-                    );
+                    ).unwrap();
                 });
             },
         );

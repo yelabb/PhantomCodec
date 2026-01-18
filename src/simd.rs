@@ -1204,7 +1204,7 @@ mod cortex_m_dsp_integration_tests {
         // Test 4-bit encoding
         let deltas = [256, -256, 512, 0];
         let mut output = [0u8; 2];
-        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut output);
+        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut output).unwrap();
 
         // Verify encoding (each delta is quantized to 4 bits)
         // 256 >> 8 = 1, -256 >> 8 = -1
@@ -1217,7 +1217,7 @@ mod cortex_m_dsp_integration_tests {
         // Test 4-bit decoding
         let encoded = [0x21u8, 0x00]; // Encoded: 1, 2, 0, 0
         let mut output = [0i32; 4];
-        cortex_m_dsp::decode_fixed_4bit(&encoded, 4, &mut output);
+        cortex_m_dsp::decode_fixed_4bit(&encoded, 4, &mut output).unwrap();
 
         // Verify decoding produces quantized values
         assert_eq!(output.len(), 4);
@@ -1231,8 +1231,8 @@ mod cortex_m_dsp_integration_tests {
         let mut encoded = [0u8; 3];
         let mut decoded = [0i32; 6];
 
-        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut encoded);
-        cortex_m_dsp::decode_fixed_4bit(&encoded, 6, &mut decoded);
+        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut encoded).unwrap();
+        cortex_m_dsp::decode_fixed_4bit(&encoded, 6, &mut decoded).unwrap();
 
         // Verify each value matches after quantization
         for i in 0..deltas.len() {
