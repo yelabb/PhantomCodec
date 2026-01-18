@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now properly clears each byte before writing first bit to it, ensuring clean writes regardless of buffer state
   - Added tests: `test_dirty_buffer_reuse()` and `test_partial_byte_dirty_buffer()` to prevent regression
 
+- **[CRITICAL]** Fixed silent data loss in Rice encoding
+  - `rice_encode()` previously clamped quotient values to 255, silently truncating large deltas
+  - This converted a "lossless" codec into a lossy one without warning
+  - Large neural artifacts or movement noise would be corrupted during compression
+  - Decompression would produce vastly smaller values than the original, causing downstream analysis failures
+  - Now returns `RiceQuotientOverflow` error when values exceed safe encoding limits
+  - Added tests: `test_rice_quotient_overflow_detection()` and `test_rice_array_with_overflow()`
+  - Added constant `MAX_RICE_QUOTIENT = 255` for clarity
+
 ### Migration Guide
 ```rust
 // Old API (unsafe):
