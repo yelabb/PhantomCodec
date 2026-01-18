@@ -24,6 +24,7 @@ default = ["std"]
 std = []
 simd = []
 cortex-m-dsp = ["cortex-m"]
+mve = []
 
 [profile.release]
 opt-level = 3
