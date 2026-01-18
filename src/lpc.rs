@@ -440,9 +440,13 @@ mod tests {
         use alloc::vec;
         
         // Simulate wavy LFP signal (sine-like)
+        const FREQ: f64 = 0.1;
+        const AMPLITUDE: f64 = 100.0;
+        const BASE_VALUE: i32 = 2048;
+        
         let mut samples = vec![0i32; 1024];
         for i in 0..1024 {
-            samples[i] = 2048 + ((i as f64 * 0.1).sin() * 100.0) as i32;
+            samples[i] = BASE_VALUE + ((i as f64 * FREQ).sin() * AMPLITUDE) as i32;
         }
         
         let mut residuals = vec![0; 1024];
@@ -462,10 +466,17 @@ mod tests {
         use alloc::vec;
         
         // Simulate complex wavy signal
+        const FREQ_1: f64 = 0.05;
+        const AMPLITUDE_1: f64 = 50.0;
+        const FREQ_2: f64 = 0.02;
+        const AMPLITUDE_2: f64 = 30.0;
+        const BASE_VALUE: i32 = 2048;
+        
         let mut samples = vec![0i32; 1024];
         for i in 0..1024 {
-            samples[i] = 2048 + ((i as f64 * 0.05).sin() * 50.0) as i32
-                + ((i as f64 * 0.02).cos() * 30.0) as i32;
+            samples[i] = BASE_VALUE 
+                + ((i as f64 * FREQ_1).sin() * AMPLITUDE_1) as i32
+                + ((i as f64 * FREQ_2).cos() * AMPLITUDE_2) as i32;
         }
         
         let mut residuals = vec![0; 1024];
