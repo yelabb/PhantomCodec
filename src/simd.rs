@@ -343,7 +343,11 @@ pub mod cortex_m_dsp {
     /// ```
     #[cfg(target_arch = "arm")]
     pub fn compute_deltas_dsp(input: &[i32], output: &mut [i32]) {
-        assert_eq!(input.len(), output.len(), "Input and output must be same length");
+        assert_eq!(
+            input.len(),
+            output.len(),
+            "Input and output must be same length"
+        );
 
         if input.is_empty() {
             return;
@@ -407,7 +411,11 @@ pub mod cortex_m_dsp {
     /// We still get benefit from reduced instruction count per sample.
     #[cfg(target_arch = "arm")]
     pub fn reconstruct_from_deltas_dsp(deltas: &[i32], output: &mut [i32]) {
-        assert_eq!(deltas.len(), output.len(), "Input and output must be same length");
+        assert_eq!(
+            deltas.len(),
+            output.len(),
+            "Input and output must be same length"
+        );
 
         if deltas.is_empty() {
             return;
@@ -468,7 +476,8 @@ pub mod cortex_m_dsp {
             let a2 = (deltas[i + 2].unsigned_abs().min(255)) as u8;
             let a3 = (deltas[i + 3].unsigned_abs().min(255)) as u8;
 
-            let packed = (a0 as u32) | ((a1 as u32) << 8) | ((a2 as u32) << 16) | ((a3 as u32) << 24);
+            let packed =
+                (a0 as u32) | ((a1 as u32) << 8) | ((a2 as u32) << 16) | ((a3 as u32) << 24);
 
             // USAD8: Sum of absolute differences with zero = sum of absolute values
             let sum = unsafe { __usad8(packed, 0) };
@@ -696,7 +705,7 @@ mod cortex_m_dsp_tests {
         // Saturation (edge cases)
         assert_eq!(i32_to_q15(i16::MAX as i32), i16::MAX);
         assert_eq!(i32_to_q15(i16::MIN as i32), i16::MIN);
-        assert_eq!(i32_to_q15(50000), i16::MAX);  // Saturates high
+        assert_eq!(i32_to_q15(50000), i16::MAX); // Saturates high
         assert_eq!(i32_to_q15(-50000), i16::MIN); // Saturates low
     }
 
@@ -755,13 +764,13 @@ mod cortex_m_dsp_tests {
 
         // Values within range
         assert_eq!(encode_4bit_single(0), 0);
-        assert_eq!(encode_4bit_single(256), 1);   // 256 >> 8 = 1
-        assert_eq!(encode_4bit_single(1792), 7);  // 1792 >> 8 = 7 (max positive)
-        assert_eq!(encode_4bit_single(-256), 0x0F & (-1i8 as u8));  // -1 in 4-bit
+        assert_eq!(encode_4bit_single(256), 1); // 256 >> 8 = 1
+        assert_eq!(encode_4bit_single(1792), 7); // 1792 >> 8 = 7 (max positive)
+        assert_eq!(encode_4bit_single(-256), 0x0F & (-1i8 as u8)); // -1 in 4-bit
         assert_eq!(encode_4bit_single(-2048), 0x0F & (-8i8 as u8)); // -8 (max negative)
 
         // Saturation beyond 4-bit range
-        assert_eq!(encode_4bit_single(3000), 7);  // Saturates to +7
+        assert_eq!(encode_4bit_single(3000), 7); // Saturates to +7
         assert_eq!(encode_4bit_single(-3000), 0x0F & (-8i8 as u8)); // Saturates to -8
     }
 
@@ -786,11 +795,11 @@ mod cortex_m_dsp_tests {
         encode_4bit(&deltas, &mut encoded);
 
         // First byte: deltas[0], deltas[1]
-        assert_eq!(encoded[0] & 0x0F, 1);  // 256 >> 8 = 1
-        assert_eq!(encoded[0] >> 4, 2);    // 512 >> 8 = 2
+        assert_eq!(encoded[0] & 0x0F, 1); // 256 >> 8 = 1
+        assert_eq!(encoded[0] >> 4, 2); // 512 >> 8 = 2
 
         // Second byte: deltas[2] only
-        assert_eq!(encoded[1] & 0x0F, 3);  // 768 >> 8 = 3
+        assert_eq!(encoded[1] & 0x0F, 3); // 768 >> 8 = 3
     }
 
     #[test]
