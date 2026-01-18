@@ -82,6 +82,35 @@ Deltas: [256, -512, 768, 0]
 - **Latency**: <2μs encode, <8μs decode (1024 channels)
 - **⚠️ Lossy**: Values quantized to 256-unit granularity (±128 error)
 
+#### 4. **QoS Auto-Throttling** (NEW)
+```rust
+use phantomcodec::qos::{QosConfig, QosController, QualityLevel};
+use phantomcodec::compress_adaptive;
+
+let config = QosConfig::new(100_000); // Target 100 KB/s
+let mut controller = QosController::new(config);
+
+// Codec automatically selects best strategy
+let size = compress_adaptive(&samples, &mut output, &mut workspace, 
+    controller.select_quality(1000))?;
+```
+- **Best for**: Wireless BCI implants with variable bandwidth
+- **Adaptive**: Automatically switches between strategies based on:
+  - Available bandwidth vs target
+  - Buffer occupancy (prevents overflow)
+  - Neural activity level
+- **Graceful degradation**: Lossless → ReducedPrecision → Lossy4Bit
+- **Automatic recovery**: Returns to lossless when conditions improve
+- **Hysteresis**: Prevents rapid oscillation between quality levels
+
+**Key Features**:
+- 🎯 **Bandwidth guarantee**: Never exceeds target bandwidth
+- 📊 **Rolling statistics**: Tracks average compressed size over 16 samples
+- 🔄 **State machine**: Smooth transitions with configurable thresholds
+- ⚙️ **Configurable priorities**: PreserveSpikes, PreserveLfp, or Balanced
+
+See [examples/qos_demo.rs](examples/qos_demo.rs) for a complete demonstration.
+
 ### Zero-Copy Memory Model
 
 ```rust
