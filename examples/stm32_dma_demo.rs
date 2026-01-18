@@ -14,6 +14,9 @@
 
 #![no_std]
 #![no_main]
+// This is a demonstration/example, so we allow patterns that would need more care in production
+#![allow(dead_code)]
+#![allow(static_mut_refs)]
 
 // Note: This is a demonstration. Actual implementation would require:
 // - STM32 HAL dependencies
