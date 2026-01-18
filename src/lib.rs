@@ -579,7 +579,6 @@ mod tests {
     use super::*;
 
     #[allow(clippy::needless_range_loop)] // Test code clarity over micro-optimization
-
     #[test]
     fn test_spike_counts_roundtrip() {
         let original = [1, 4, 2, 5, 3, 6, 2, 7, 1, 8];

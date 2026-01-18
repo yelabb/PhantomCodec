@@ -351,7 +351,6 @@ mod tests {
     use super::*;
 
     #[allow(clippy::needless_range_loop)] // Test code clarity over micro-optimization
-
     #[test]
     fn test_zigzag_encode_decode() {
         let test_cases = [0, -1, 1, -2, 2, -100, 100, i32::MIN, i32::MAX];
