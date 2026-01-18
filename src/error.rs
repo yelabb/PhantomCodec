@@ -53,6 +53,18 @@ pub enum CodecError {
         k: u8,
     },
 
+    /// Rice encoding quotient exceeds maximum safe value
+    /// 
+    /// This occurs when delta values are too large for the selected Rice parameter.
+    /// The value would be silently truncated if encoded, causing data corruption.
+    /// Consider using a different compression strategy for this data.
+    RiceQuotientOverflow {
+        /// The value that exceeded the limit
+        value: u32,
+        /// The Rice parameter k that was being used
+        k: u8,
+    },
+
     /// Bit position overflow in BitWriter
     BitPositionOverflow,
 }
@@ -72,6 +84,7 @@ impl CodecError {
             CodecError::UnexpectedEndOfInput => -6,
             CodecError::InvalidZigZagValue => -7,
             CodecError::InvalidRiceParameter { .. } => -8,
+            CodecError::RiceQuotientOverflow { .. } => -10,
             CodecError::BitPositionOverflow => -9,
         }
     }
@@ -91,6 +104,7 @@ impl CodecError {
             -7 => Some(CodecError::InvalidZigZagValue),
             -8 => Some(CodecError::InvalidRiceParameter { k: 0 }),
             -9 => Some(CodecError::BitPositionOverflow),
+            -10 => Some(CodecError::RiceQuotientOverflow { value: 0, k: 0 }),
             _ => None,
         }
     }
@@ -126,6 +140,13 @@ impl fmt::Display for CodecError {
             }
             CodecError::InvalidRiceParameter { k } => {
                 write!(f, "Invalid Rice parameter k={} (must be 0-3)", k)
+            }
+            CodecError::RiceQuotientOverflow { value, k } => {
+                write!(
+                    f,
+                    "Rice quotient overflow: value {} too large for k={} (quotient would exceed 255)",
+                    value, k
+                )
             }
             CodecError::BitPositionOverflow => {
                 write!(f, "Bit position overflow in BitWriter")

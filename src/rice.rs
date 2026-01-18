@@ -17,6 +17,17 @@ use crate::simd::sum_abs_deltas;
 /// Maximum Rice parameter value (2 bits in header)
 pub const MAX_RICE_K: u8 = 3;
 
+/// Maximum safe unary quotient length
+/// 
+/// This prevents excessively long unary sequences that could:
+/// 1. Cause buffer overflows during encoding
+/// 2. Take excessive time to decode
+/// 3. Indicate data unsuitable for Rice coding
+/// 
+/// A quotient of 255 with k=0 represents value 255,
+/// with k=3 represents value 2040 (255 << 3).
+pub const MAX_RICE_QUOTIENT: u32 = 255;
+
 /// Number of samples to analyze for adaptive k selection
 const ADAPTIVE_SAMPLE_SIZE: usize = 16;
 
@@ -68,6 +79,11 @@ pub fn select_rice_parameter(deltas: &[i32]) -> u8 {
 /// * `value` - Unsigned value to encode (must be non-negative)
 /// * `k` - Rice parameter (0-3)
 ///
+/// # Errors
+/// Returns `RiceQuotientOverflow` if the quotient exceeds 255, which would
+/// cause silent data corruption. This typically indicates the data is not
+/// suitable for Rice coding with the selected k parameter.
+///
 /// # Example
 /// ```
 /// # use phantomcodec::rice::rice_encode;
@@ -89,10 +105,14 @@ pub fn rice_encode(writer: &mut BitWriter, value: u32, k: u8) -> CodecResult<()>
     let quotient = value >> k;
     let remainder = value & ((1u32 << k) - 1);
 
+    // Check if quotient exceeds safe limit
+    // This prevents silent data corruption from clamping
+    if quotient > MAX_RICE_QUOTIENT {
+        return Err(CodecError::RiceQuotientOverflow { value, k });
+    }
+
     // Encode quotient in unary (q zeros followed by a 1)
-    // Clamp quotient to prevent excessive unary length
-    let quotient_clamped = quotient.min(255); // Max 255 zeros
-    for _ in 0..quotient_clamped {
+    for _ in 0..quotient {
         writer.write_bits(0, 1)?;
     }
     writer.write_bits(1, 1)?;
@@ -288,8 +308,48 @@ mod tests {
         assert_eq!(decoded, deltas);
     }
 
+    #[test]    fn test_rice_quotient_overflow_detection() {
+        // Test that values exceeding quotient limit are properly rejected
+        let mut buffer = [0u8; 100];
+        let mut writer = BitWriter::new(&mut buffer);
+
+        // With k=0, quotient = value
+        // Max safe quotient is 255, so 256 should fail
+        let result = rice_encode(&mut writer, 256, 0);
+        assert!(matches!(
+            result,
+            Err(CodecError::RiceQuotientOverflow { value: 256, k: 0 })
+        ));
+
+        // With k=3, quotient = value >> 3
+        // Value 2048 >> 3 = 256, should fail
+        let result = rice_encode(&mut writer, 2048, 3);
+        assert!(matches!(
+            result,
+            Err(CodecError::RiceQuotientOverflow { value: 2048, k: 3 })
+        ));
+
+        // Value 2040 >> 3 = 255, should succeed (max safe value)
+        rice_encode(&mut writer, 2040, 3).expect("2040 with k=3 should be encodable");
+    }
+
     #[test]
-    fn test_rice_invalid_k() {
+    fn test_rice_array_with_overflow() {
+        // Test that encoding an array with overflow returns error
+        let deltas = [10, 3, 2, 5000, 2, 1]; // 5000 is too large
+        let mut buffer = [0u8; 100];
+
+        // With k=1, quotient for 5000 would be 2500, exceeding limit
+        // The adaptive selector might pick k=1 or k=3
+        let result = rice_encode_array(&deltas, &mut buffer, false);
+        
+        // Should either succeed (if k=3 is high enough) or fail with overflow
+        if let Err(e) = result {
+            assert!(matches!(e, CodecError::RiceQuotientOverflow { .. }));
+        }
+    }
+
+    #[test]    fn test_rice_invalid_k() {
         let mut buffer = [0u8; 10];
         let mut writer = BitWriter::new(&mut buffer);
 
