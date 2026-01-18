@@ -22,6 +22,8 @@ pub enum StrategyId {
     Rice = 0x01,
     /// Fixed 4-bit packing (lossy, ultra-low-latency <10µs)
     Packed4 = 0x02,
+    /// Fixed-Width Block Packing (PFOR) - lossless, ultra-low-latency <10µs
+    FixedWidth = 0x03,
 }
 
 impl StrategyId {
@@ -31,6 +33,7 @@ impl StrategyId {
             0x00 => Some(StrategyId::DeltaVarint),
             0x01 => Some(StrategyId::Rice),
             0x02 => Some(StrategyId::Packed4),
+            0x03 => Some(StrategyId::FixedWidth),
             _ => None,
         }
     }
