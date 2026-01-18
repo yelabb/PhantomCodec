@@ -56,15 +56,17 @@ Rice parameter 'k' adapts per frame:
 // Application controls memory placement
 static mut COMPRESS_BUF: [u8; 4096] = [0; 4096];
 static mut NEURAL_DATA: [i32; 1024] = [0; 1024];
+static mut WORKSPACE: [i32; 1024] = [0; 1024]; // Required for no_std safety
 
 // PhantomCodec borrows memory, never allocates
 let compressed_size = phantomcodec::compress_spike_counts(
     &NEURAL_DATA,      // Input: &[i32]
-    &mut COMPRESS_BUF  // Output: &mut [u8]
+    &mut COMPRESS_BUF, // Output: &mut [u8]
+    &mut WORKSPACE     // Workspace: &mut [i32] (prevents unsafe static mut)
 )?;
 ```
 
-**Key principle**: The library is **sans-IO** — it doesn't know about DMA, interrupts, or global state. See [examples/](examples/) for integration patterns.
+**Key principle**: The library is **sans-IO** — it doesn't know about DMA, interrupts, or global state. The workspace buffer requirement eliminates unsafe static mutable state and ensures reentrancy safety. See [examples/](examples/) for integration patterns.
 
 ---
 
@@ -154,17 +156,18 @@ fn main() -> ! {
     let mut input: [i32; 1024] = [0; 1024];
     let mut compressed: [u8; 4096] = [0; 4096];
     let mut decompressed: [i32; 1024] = [0; 1024];
+    let mut workspace: [i32; 1024] = [0; 1024]; // Required for safe no_std operation
     
     // Simulate neural data
     input[42] = 7;  // Channel 42 fired 7 times
     input[99] = 3;  // Channel 99 fired 3 times
     
-    // Compress
-    let size = compress_spike_counts(&input, &mut compressed)
+    // Compress (workspace prevents unsafe static mut)
+    let size = compress_spike_counts(&input, &mut compressed, &mut workspace)
         .expect("Compression failed");
     
     // Decompress
-    let decoded_size = decompress_spike_counts(&compressed[..size], &mut decompressed)
+    let decoded_size = decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace)
         .expect("Decompression failed");
     
     assert_eq!(input, decompressed);
@@ -225,23 +228,27 @@ Compressed:     ~280 bytes (49% reduction)
 // For unsigned spike counts (no ZigZag)
 pub fn compress_spike_counts(
     input: &[i32],
-    output: &mut [u8]
+    output: &mut [u8],
+    workspace: &mut [i32]  // Required: prevents unsafe static mut
 ) -> CodecResult<usize>
 
 pub fn decompress_spike_counts(
     input: &[u8],
-    output: &mut [i32]
+    output: &mut [i32],
+    workspace: &mut [i32]  // Required: must be >= channel_count
 ) -> CodecResult<usize>
 
 // For signed voltages (with ZigZag + Rice)
 pub fn compress_voltage(
     input: &[i32],
-    output: &mut [u8]
+    output: &mut [u8],
+    workspace: &mut [i32]  // Required: prevents unsafe static mut
 ) -> CodecResult<usize>
 
 pub fn decompress_voltage(
     input: &[u8],
-    output: &mut [i32]
+    output: &mut [i32],
+    workspace: &mut [i32]  // Required: must be >= channel_count
 ) -> CodecResult<usize>
 ```
 
@@ -310,7 +317,35 @@ Strategy byte:
 
 ---
 
-## 🔌 Integration with Phantom Suite
+## �️ Safety & Reentrancy
+
+### The `workspace` Buffer Requirement
+
+PhantomCodec requires callers to provide a `workspace` buffer to ensure safe operation in embedded environments with interrupts:
+
+**Why this matters:**
+- In `no_std` embedded systems, interrupt handlers can preempt the main loop at any time
+- If both contexts call compression using a shared static mutable buffer, **data corruption occurs immediately**
+- This is especially critical in neural recording systems where ADC DMA interrupts often trigger compression
+
+**The Solution:**
+```rust
+// ❌ UNSAFE (old approach): Hidden static mut buffer leads to reentrancy bugs
+let size = compress(&data, &mut output)?;  // Internally uses static mut TEMP_BUFFER
+
+// ✅ SAFE (current approach): Caller controls all memory
+let mut workspace = [0i32; 1024];
+let size = compress(&data, &mut output, &mut workspace)?;  // No hidden state
+```
+
+**Best Practices:**
+- Allocate one workspace buffer per execution context (main loop, ISR, etc.)
+- For interrupt-driven compression, use separate buffers or disable interrupts during compression
+- See [examples/stm32_dma_demo.rs](examples/stm32_dma_demo.rs) for production-ready patterns
+
+---
+
+## �🔌 Integration with Phantom Suite
 
 PhantomCodec is designed to slot into the existing data pipeline:
 

@@ -12,14 +12,17 @@
 //! spike_counts[42] = 7;  // Channel 42 fired 7 times
 //! spike_counts[99] = 3;  // Channel 99 fired 3 times
 //!
+//! // Allocate workspace (required for no_std safety)
+//! let mut workspace = [0i32; 1024];
+//!
 //! // Compress
 //! let mut compressed = [0u8; 8192];
-//! let size = compress_spike_counts(&spike_counts, &mut compressed)
+//! let size = compress_spike_counts(&spike_counts, &mut compressed, &mut workspace)
 //!     .expect("Compression failed");
 //!
 //! // Decompress
 //! let mut decompressed = [0i32; 1024];
-//! decompress_spike_counts(&compressed[..size], &mut decompressed)
+//! decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace)
 //!     .expect("Decompression failed");
 //!
 //! assert_eq!(spike_counts, decompressed);
@@ -54,19 +57,25 @@ use varint::{varint_decode_array, varint_encode_array};
 /// # Arguments
 /// * `input` - Raw spike counts per channel
 /// * `output` - Output buffer for compressed packet
+/// * `workspace` - Temporary buffer for delta computation (must be >= input.len())
 ///
 /// # Returns
 /// Number of bytes written, or error if buffer too small
+///
+/// # Safety
+/// The `workspace` buffer is required for no_std environments to avoid
+/// unsafe static mutable state. Caller must ensure workspace is not aliased.
 ///
 /// # Example
 /// ```
 /// # use phantomcodec::compress_spike_counts;
 /// let spike_counts = [1, 4, 2, 5, 3];
 /// let mut compressed = [0u8; 100];
-/// let size = compress_spike_counts(&spike_counts, &mut compressed).unwrap();
+/// let mut workspace = [0i32; 5];
+/// let size = compress_spike_counts(&spike_counts, &mut compressed, &mut workspace).unwrap();
 /// assert!(size > 0);
 /// ```
-pub fn compress_spike_counts(input: &[i32], output: &mut [u8]) -> CodecResult<usize> {
+pub fn compress_spike_counts(input: &[i32], output: &mut [u8], workspace: &mut [i32]) -> CodecResult<usize> {
     let frame = NeuralFrame::new(input);
     let channel_count = frame.channel_count_u16()?;
 
@@ -76,17 +85,19 @@ pub fn compress_spike_counts(input: &[i32], output: &mut [u8]) -> CodecResult<us
 
     let payload_start = PacketHeader::SIZE;
 
+    // Validate workspace size
+    if workspace.len() < input.len() {
+        return Err(CodecError::BufferTooSmall {
+            required: input.len(),
+        });
+    }
+
     // Compute deltas using SIMD
-    #[cfg(feature = "std")]
-    let mut deltas = vec![0i32; input.len()];
-    #[cfg(not(feature = "std"))]
-    let mut deltas = alloc_temp_buffer(input.len())?;
-    
-    compute_deltas(input, &mut deltas[..]);
+    compute_deltas(input, &mut workspace[..input.len()]);
 
     // Encode with Varint (no ZigZag for unsigned data)
     let payload_size = varint_encode_array(
-        &deltas[..],
+        &workspace[..input.len()],
         &mut output[payload_start..],
         false, // No ZigZag
     )?;
@@ -99,23 +110,29 @@ pub fn compress_spike_counts(input: &[i32], output: &mut [u8]) -> CodecResult<us
 /// # Arguments
 /// * `input` - Compressed packet (including header)
 /// * `output` - Output buffer for decompressed spike counts
+/// * `workspace` - Temporary buffer for delta reconstruction (must be >= channel_count)
 ///
 /// # Returns
 /// Number of channels decompressed
+///
+/// # Safety
+/// The `workspace` buffer is required for no_std environments to avoid
+/// unsafe static mutable state. Caller must ensure workspace is not aliased.
 ///
 /// # Example
 /// ```
 /// # use phantomcodec::{compress_spike_counts, decompress_spike_counts};
 /// let original = [1, 4, 2, 5, 3];
 /// let mut compressed = [0u8; 100];
-/// let size = compress_spike_counts(&original, &mut compressed).unwrap();
+/// let mut workspace = [0i32; 5];
+/// let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
 ///
 /// let mut decompressed = [0i32; 5];
-/// let count = decompress_spike_counts(&compressed[..size], &mut decompressed).unwrap();
+/// let count = decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
 /// assert_eq!(count, 5);
 /// assert_eq!(original, decompressed);
 /// ```
-pub fn decompress_spike_counts(input: &[u8], output: &mut [i32]) -> CodecResult<usize> {
+pub fn decompress_spike_counts(input: &[u8], output: &mut [i32], workspace: &mut [i32]) -> CodecResult<usize> {
     // Parse header
     let header = PacketHeader::read(input)?;
 
@@ -132,17 +149,19 @@ pub fn decompress_spike_counts(input: &[u8], output: &mut [i32]) -> CodecResult<
         });
     }
 
+    // Validate workspace size
+    if workspace.len() < channel_count {
+        return Err(CodecError::BufferTooSmall {
+            required: channel_count,
+        });
+    }
+
     // Decode deltas
     let payload = &input[PacketHeader::SIZE..];
-    #[cfg(feature = "std")]
-    let mut deltas = vec![0i32; channel_count];
-    #[cfg(not(feature = "std"))]
-    let mut deltas = alloc_temp_buffer(channel_count)?;
-    
-    varint_decode_array(payload, &mut deltas[..], false)?;
+    varint_decode_array(payload, &mut workspace[..channel_count], false)?;
 
     // Reconstruct from deltas
-    reconstruct_from_deltas(&deltas[..], &mut output[..channel_count]);
+    reconstruct_from_deltas(&workspace[..channel_count], &mut output[..channel_count]);
 
     Ok(channel_count)
 }
@@ -155,24 +174,31 @@ pub fn decompress_spike_counts(input: &[u8], output: &mut [i32]) -> CodecResult<
 /// # Arguments
 /// * `input` - Raw voltage samples
 /// * `output` - Output buffer for compressed packet
+/// * `workspace` - Temporary buffer for delta computation (must be >= input.len())
 ///
 /// # Returns
 /// Number of bytes written, or error if buffer too small
-pub fn compress_voltage(input: &[i32], output: &mut [u8]) -> CodecResult<usize> {
+///
+/// # Safety
+/// The `workspace` buffer is required for no_std environments to avoid
+/// unsafe static mutable state. Caller must ensure workspace is not aliased.
+pub fn compress_voltage(input: &[i32], output: &mut [u8], workspace: &mut [i32]) -> CodecResult<usize> {
     let frame = NeuralFrame::new(input);
     let channel_count = frame.channel_count_u16()?;
 
+    // Validate workspace size
+    if workspace.len() < input.len() {
+        return Err(CodecError::BufferTooSmall {
+            required: input.len(),
+        });
+    }
+
     // Compute deltas
-    #[cfg(feature = "std")]
-    let mut deltas = vec![0i32; input.len()];
-    #[cfg(not(feature = "std"))]
-    let mut deltas = alloc_temp_buffer(input.len())?;
-    
-    compute_deltas(input, &mut deltas[..]);
+    compute_deltas(input, &mut workspace[..input.len()]);
 
     // Encode with Rice (with ZigZag for signed data)
     let (payload_size, k) = rice::rice_encode_array(
-        &deltas[..],
+        &workspace[..input.len()],
         &mut output[PacketHeader::SIZE..],
         true, // Use ZigZag
     )?;
@@ -189,10 +215,15 @@ pub fn compress_voltage(input: &[i32], output: &mut [u8]) -> CodecResult<usize> 
 /// # Arguments
 /// * `input` - Compressed packet (including header)
 /// * `output` - Output buffer for decompressed voltages
+/// * `workspace` - Temporary buffer for delta reconstruction (must be >= channel_count)
 ///
 /// # Returns
 /// Number of samples decompressed
-pub fn decompress_voltage(input: &[u8], output: &mut [i32]) -> CodecResult<usize> {
+///
+/// # Safety
+/// The `workspace` buffer is required for no_std environments to avoid
+/// unsafe static mutable state. Caller must ensure workspace is not aliased.
+pub fn decompress_voltage(input: &[u8], output: &mut [i32], workspace: &mut [i32]) -> CodecResult<usize> {
     // Parse header
     let header = PacketHeader::read(input)?;
 
@@ -209,17 +240,19 @@ pub fn decompress_voltage(input: &[u8], output: &mut [i32]) -> CodecResult<usize
         });
     }
 
+    // Validate workspace size
+    if workspace.len() < channel_count {
+        return Err(CodecError::BufferTooSmall {
+            required: channel_count,
+        });
+    }
+
     // Decode deltas
     let payload = &input[PacketHeader::SIZE..];
-    #[cfg(feature = "std")]
-    let mut deltas = vec![0i32; channel_count];
-    #[cfg(not(feature = "std"))]
-    let mut deltas = alloc_temp_buffer(channel_count)?;
-    
-    rice::rice_decode_array(payload, &mut deltas[..], header.rice_k, true)?;
+    rice::rice_decode_array(payload, &mut workspace[..channel_count], header.rice_k, true)?;
 
     // Reconstruct from deltas
-    reconstruct_from_deltas(&deltas[..], &mut output[..channel_count]);
+    reconstruct_from_deltas(&workspace[..channel_count], &mut output[..channel_count]);
 
     Ok(channel_count)
 }
@@ -251,30 +284,6 @@ pub fn decompress<S: CompressionStrategy>(
     S::decompress(input, output)
 }
 
-// Internal helper: Allocate temporary buffer for deltas
-// In no_std, we use a static buffer with a size limit
-#[cfg(not(feature = "std"))]
-fn alloc_temp_buffer(size: usize) -> CodecResult<&'static mut [i32]> {
-    const MAX_CHANNELS: usize = 4096;
-    static mut TEMP_BUFFER: [i32; MAX_CHANNELS] = [0; MAX_CHANNELS];
-
-    if size > MAX_CHANNELS {
-        return Err(CodecError::InvalidChannelCount {
-            expected: MAX_CHANNELS,
-            actual: size,
-        });
-    }
-
-    // SAFETY: Single-threaded access in embedded context
-    // Users must ensure this function is not called from multiple threads
-    unsafe { Ok(&mut TEMP_BUFFER[..size]) }
-}
-
-#[cfg(feature = "std")]
-fn alloc_temp_buffer(size: usize) -> CodecResult<Vec<i32>> {
-    Ok(vec![0; size])
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,12 +293,13 @@ mod tests {
         let original = [1, 4, 2, 5, 3, 6, 2, 7, 1, 8];
         let mut compressed = [0u8; 100];
         let mut decompressed = [0i32; 10];
+        let mut workspace = [0i32; 10];
 
-        let size = compress_spike_counts(&original, &mut compressed).unwrap();
+        let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
         assert!(size > 0);
         assert!(size < 100); // Should be compressed
 
-        let count = decompress_spike_counts(&compressed[..size], &mut decompressed).unwrap();
+        let count = decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 10);
         assert_eq!(original, decompressed);
     }
@@ -299,11 +309,12 @@ mod tests {
         let original = [100, 103, 101, 104, 102, 105, 103, 106, 104, 107];
         let mut compressed = [0u8; 100];
         let mut decompressed = [0i32; 10];
+        let mut workspace = [0i32; 10];
 
-        let size = compress_voltage(&original, &mut compressed).unwrap();
+        let size = compress_voltage(&original, &mut compressed, &mut workspace).unwrap();
         assert!(size > 0);
 
-        let count = decompress_voltage(&compressed[..size], &mut decompressed).unwrap();
+        let count = decompress_voltage(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 10);
         assert_eq!(original, decompressed);
     }
@@ -318,9 +329,10 @@ mod tests {
 
         let mut compressed = [0u8; 400];
         let mut decompressed = [0i32; 100];
+        let mut workspace = [0i32; 100];
 
-        let size = compress_spike_counts(&original, &mut compressed).unwrap();
-        decompress_spike_counts(&compressed[..size], &mut decompressed).unwrap();
+        let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
+        decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
 
         assert_eq!(original, decompressed);
     }
@@ -329,8 +341,9 @@ mod tests {
     fn test_buffer_too_small() {
         let original = [1, 2, 3, 4, 5];
         let mut compressed = [0u8; 5]; // Too small
+        let mut workspace = [0i32; 5];
 
-        let result = compress_spike_counts(&original, &mut compressed);
+        let result = compress_spike_counts(&original, &mut compressed, &mut workspace);
         assert!(matches!(result, Err(CodecError::BufferTooSmall { .. })));
     }
 
@@ -338,8 +351,9 @@ mod tests {
     fn test_corrupted_header() {
         let corrupted = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
         let mut output = [0i32; 10];
+        let mut workspace = [0i32; 10];
 
-        let result = decompress_spike_counts(&corrupted, &mut output);
+        let result = decompress_spike_counts(&corrupted, &mut output, &mut workspace);
         assert_eq!(result, Err(CodecError::CorruptedHeader));
     }
 
@@ -352,7 +366,8 @@ mod tests {
         }
 
         let mut compressed = [0u8; 1024];
-        let size = compress_spike_counts(&original, &mut compressed).unwrap();
+        let mut workspace = [0i32; 142];
+        let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
 
         // Expect significant compression
         println!("Original: {} bytes, Compressed: {} bytes", 142 * 4, size);

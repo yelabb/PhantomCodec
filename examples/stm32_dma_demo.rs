@@ -39,6 +39,13 @@ static mut ADC_BUFFER: [u16; NUM_CHANNELS] = [0; NUM_CHANNELS];
 /// Spike count accumulator (binned over 25ms windows)
 static mut SPIKE_COUNTS: [i32; NUM_CHANNELS] = [0; NUM_CHANNELS];
 
+/// Workspace buffer for compression (required for no_std safety)
+///
+/// This buffer is used by the compression algorithm for delta computation.
+/// Must be at least NUM_CHANNELS in size. Separating this from SPIKE_COUNTS
+/// prevents reentrancy issues in interrupt contexts.
+static mut COMPRESSION_WORKSPACE: [i32; NUM_CHANNELS] = [0; NUM_CHANNELS];
+
 /// Compressed output buffer
 ///
 /// Size: Worst-case is ~2x uncompressed (header + no compression gain)
@@ -73,7 +80,7 @@ fn main() -> ! {
         // Process spike counts in main loop (not ISR)
         unsafe {
             match compress_and_transmit() {
-                Ok(size) => {
+                Ok(_size) => {
                     // Optional: Log compression ratio
                     // Original: 128 channels * 4 bytes = 512 bytes
                     // Compressed: ~250 bytes typical
@@ -102,8 +109,13 @@ unsafe fn compress_and_transmit() -> CodecResult<usize> {
     };
 
     // Compress spike counts into transmission buffer
-    // This is the ONLY allocation-free compression call
-    let compressed_size = compress_spike_counts(&SPIKE_COUNTS, tx_buffer)?;
+    // The workspace buffer prevents unsafe static mutable state
+    // and ensures reentrancy safety in interrupt contexts
+    let compressed_size = compress_spike_counts(
+        &SPIKE_COUNTS,
+        tx_buffer,
+        &mut COMPRESSION_WORKSPACE
+    )?;
 
     // Initiate DMA transmission (non-blocking)
     // HAL-specific: start_dma_transfer(tx_buffer, compressed_size);
@@ -251,8 +263,13 @@ fn setup_uart_dma() {
 //
 // Memory usage:
 // - Stack: <1KB (all buffers are static)
-// - .data + .bss: ~4KB (NUM_CHANNELS * 4 * 3 buffers)
+// - .data + .bss: ~5KB (NUM_CHANNELS * 4 * 4 buffers + workspace)
 // - Flash: ~8KB (code + rodata)
+//
+// Safety Notes:
+// - COMPRESSION_WORKSPACE is separate from SPIKE_COUNTS to prevent aliasing
+// - No static mut references are held across function calls
+// - Safe to call from main loop; ISRs only modify SPIKE_COUNTS atomically
 
 // ============================================================================
 // Panic Handler (Required for no_std)
