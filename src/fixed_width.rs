@@ -98,8 +98,9 @@ pub fn zigzag_decode(n: u32) -> i32 {
 pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> CodecResult<usize> {
     let count = deltas.len().min(BLOCK_SIZE);
     
+    // Validate bit width is in supported range
     if bit_width > 16 {
-        return Err(CodecError::InvalidStrategy { strategy_id: bit_width });
+        return Err(CodecError::UnexpectedEndOfInput); // Best fit for invalid parameter
     }
 
     // Calculate required output size: 1 byte header + packed data
@@ -108,6 +109,11 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
     
     if output.len() < bytes_needed {
         return Err(CodecError::BufferTooSmall { required: bytes_needed });
+    }
+
+    // Zero the output buffer region to ensure clean bit operations
+    for byte in output[0..bytes_needed].iter_mut() {
+        *byte = 0;
     }
 
     // Write header: [7:4] reserved, [3:0] bit_width
@@ -128,15 +134,11 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
         // Write value bit by bit
         for bit in 0..bit_width {
             let bit_value = (value >> bit) & 1;
-            let byte_idx = 1 + (bit_pos / 8);
-            let bit_idx = bit_pos % 8;
-            
             if bit_value != 0 {
+                let byte_idx = 1 + (bit_pos / 8);
+                let bit_idx = bit_pos % 8;
                 output[byte_idx] |= 1 << bit_idx;
-            } else {
-                output[byte_idx] &= !(1 << bit_idx);
             }
-            
             bit_pos += 1;
         }
     }
@@ -177,11 +179,7 @@ pub fn decode_block_32(input: &[u8], count: usize, output: &mut [i32]) -> CodecR
     // Dispatch to specialized unpacker if available
     let bytes_consumed = match bit_width {
         4 => decode_width_4(input, count, output)?,
-        5 => decode_width_5(input, count, output)?,
-        6 => decode_width_6(input, count, output)?,
         8 => decode_width_8(input, count, output)?,
-        10 => decode_width_10(input, count, output)?,
-        12 => decode_width_12(input, count, output)?,
         _ => decode_width_generic(input, count, output, bit_width)?,
     };
 
@@ -207,7 +205,10 @@ fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
             // Value fits in single byte
             (data[byte_idx] >> bit_offset) & 0x0F
         } else {
-            // Value spans two bytes
+            // Value spans two bytes - verify we have access to second byte
+            if byte_idx + 1 >= data.len() {
+                return Err(CodecError::UnexpectedEndOfInput);
+            }
             let low_bits = data[byte_idx] >> bit_offset;
             let high_bits = data[byte_idx + 1] << (8 - bit_offset);
             (low_bits | high_bits) & 0x0F
@@ -217,16 +218,6 @@ fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
     }
 
     Ok(bytes_needed)
-}
-
-/// Specialized decoder for 5-bit width
-fn decode_width_5(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
-    decode_width_generic(input, count, output, 5)
-}
-
-/// Specialized decoder for 6-bit width
-fn decode_width_6(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
-    decode_width_generic(input, count, output, 6)
 }
 
 /// Specialized decoder for 8-bit width (4 samples per 32-bit word)
@@ -244,16 +235,6 @@ fn decode_width_8(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
     }
 
     Ok(bytes_needed)
-}
-
-/// Specialized decoder for 10-bit width
-fn decode_width_10(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
-    decode_width_generic(input, count, output, 10)
-}
-
-/// Specialized decoder for 12-bit width
-fn decode_width_12(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
-    decode_width_generic(input, count, output, 12)
 }
 
 /// Generic decoder for any bit width (1-16 bits)
