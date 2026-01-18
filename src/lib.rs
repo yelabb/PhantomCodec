@@ -35,7 +35,10 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#![cfg_attr(all(feature = "simd", target_feature = "simd128"), feature(portable_simd))]
+#![cfg_attr(
+    all(feature = "simd", target_feature = "simd128"),
+    feature(portable_simd)
+)]
 #![warn(missing_docs)]
 
 pub mod bitwriter;
@@ -81,7 +84,11 @@ use varint::{varint_decode_array, varint_encode_array};
 /// let size = compress_spike_counts(&spike_counts, &mut compressed, &mut workspace).unwrap();
 /// assert!(size > 0);
 /// ```
-pub fn compress_spike_counts(input: &[i32], output: &mut [u8], workspace: &mut [i32]) -> CodecResult<usize> {
+pub fn compress_spike_counts(
+    input: &[i32],
+    output: &mut [u8],
+    workspace: &mut [i32],
+) -> CodecResult<usize> {
     let frame = NeuralFrame::new(input);
     let channel_count = frame.channel_count_u16()?;
 
@@ -138,7 +145,11 @@ pub fn compress_spike_counts(input: &[i32], output: &mut [u8], workspace: &mut [
 /// assert_eq!(count, 5);
 /// assert_eq!(original, decompressed);
 /// ```
-pub fn decompress_spike_counts(input: &[u8], output: &mut [i32], workspace: &mut [i32]) -> CodecResult<usize> {
+pub fn decompress_spike_counts(
+    input: &[u8],
+    output: &mut [i32],
+    workspace: &mut [i32],
+) -> CodecResult<usize> {
     // Parse header
     let header = PacketHeader::read(input)?;
 
@@ -188,7 +199,11 @@ pub fn decompress_spike_counts(input: &[u8], output: &mut [i32], workspace: &mut
 /// # Safety
 /// The `workspace` buffer is required for no_std environments to avoid
 /// unsafe static mutable state. Caller must ensure workspace is not aliased.
-pub fn compress_voltage(input: &[i32], output: &mut [u8], workspace: &mut [i32]) -> CodecResult<usize> {
+pub fn compress_voltage(
+    input: &[i32],
+    output: &mut [u8],
+    workspace: &mut [i32],
+) -> CodecResult<usize> {
     let frame = NeuralFrame::new(input);
     let channel_count = frame.channel_count_u16()?;
 
@@ -229,7 +244,11 @@ pub fn compress_voltage(input: &[i32], output: &mut [u8], workspace: &mut [i32])
 /// # Safety
 /// The `workspace` buffer is required for no_std environments to avoid
 /// unsafe static mutable state. Caller must ensure workspace is not aliased.
-pub fn decompress_voltage(input: &[u8], output: &mut [i32], workspace: &mut [i32]) -> CodecResult<usize> {
+pub fn decompress_voltage(
+    input: &[u8],
+    output: &mut [i32],
+    workspace: &mut [i32],
+) -> CodecResult<usize> {
     // Parse header
     let header = PacketHeader::read(input)?;
 
@@ -255,7 +274,12 @@ pub fn decompress_voltage(input: &[u8], output: &mut [i32], workspace: &mut [i32
 
     // Decode deltas
     let payload = &input[PacketHeader::SIZE..];
-    rice::rice_decode_array(payload, &mut workspace[..channel_count], header.rice_k, true)?;
+    rice::rice_decode_array(
+        payload,
+        &mut workspace[..channel_count],
+        header.rice_k,
+        true,
+    )?;
 
     // Reconstruct from deltas
     reconstruct_from_deltas(&workspace[..channel_count], &mut output[..channel_count]);
@@ -283,10 +307,7 @@ pub fn compress<S: CompressionStrategy>(input: &[i32], output: &mut [u8]) -> Cod
 ///
 /// # Type Parameters
 /// * `S` - Compression strategy (must match the one used for compression)
-pub fn decompress<S: CompressionStrategy>(
-    input: &[u8],
-    output: &mut [i32],
-) -> CodecResult<usize> {
+pub fn decompress<S: CompressionStrategy>(input: &[u8], output: &mut [i32]) -> CodecResult<usize> {
     S::decompress(input, output)
 }
 
@@ -305,7 +326,8 @@ mod tests {
         assert!(size > 0);
         assert!(size < 100); // Should be compressed
 
-        let count = decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        let count = decompress_spike_counts(&compressed[..size], &mut decompressed, &mut workspace)
+            .unwrap();
         assert_eq!(count, 10);
         assert_eq!(original, decompressed);
     }
@@ -320,7 +342,8 @@ mod tests {
         let size = compress_voltage(&original, &mut compressed, &mut workspace).unwrap();
         assert!(size > 0);
 
-        let count = decompress_voltage(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        let count =
+            decompress_voltage(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 10);
         assert_eq!(original, decompressed);
     }
@@ -367,8 +390,8 @@ mod tests {
     fn test_realistic_size() {
         // Simulate 142 channels @ 40Hz (typical PhantomLink data)
         let mut original = [0i32; 142];
-        for i in 0..142 {
-            original[i] = (i % 5) as i32; // Sparse firing
+        for (i, item) in original.iter_mut().enumerate() {
+            *item = (i % 5) as i32; // Sparse firing
         }
 
         let mut compressed = [0u8; 1024];
@@ -376,6 +399,7 @@ mod tests {
         let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
 
         // Expect significant compression
+        #[cfg(feature = "std")]
         println!("Original: {} bytes, Compressed: {} bytes", 142 * 4, size);
         assert!(size < 142 * 4); // Should be smaller than raw data
     }

@@ -54,7 +54,7 @@ pub enum CodecError {
     },
 
     /// Rice encoding quotient exceeds maximum safe value
-    /// 
+    ///
     /// This occurs when delta values are too large for the selected Rice parameter.
     /// The value would be silently truncated if encoded, causing data corruption.
     /// Consider using a different compression strategy for this data.
@@ -197,6 +197,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_error_display() {
         let err = CodecError::BufferTooSmall { required: 2048 };
         let display = format!("{}", err);

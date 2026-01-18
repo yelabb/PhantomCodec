@@ -18,7 +18,7 @@ categories = ["compression", "embedded", "no-std", "science"]
 default = ["std"]
 std = []
 simd = []
-cortex-m-dsp = ["dep:cortex-m"]
+cortex-m-dsp = ["cortex-m"]
 
 [profile.release]
 opt-level = 3
@@ -31,9 +31,12 @@ strip = true
 inherits = "release"
 debug = true
 
-[[example]]
-name = "stm32_dma_demo"
-required-features = ["cortex-m-dsp"]
+# Note: This example is designed for embedded targets only
+# It will not build on x86_64/desktop platforms due to #![no_main]
+# To build for embedded: cargo build --example stm32_dma_demo --target thumbv7em-none-eabihf --no-default-features --features cortex-m-dsp
+# [[example]]
+# name = "stm32_dma_demo"
+# required-features = ["cortex-m-dsp"]
 
 [package.metadata.docs.rs]
 all-features = true

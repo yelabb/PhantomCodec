@@ -24,7 +24,11 @@
 /// assert_eq!(output, [10, 3, -2, 3, -2]);
 /// ```
 pub fn compute_deltas(input: &[i32], output: &mut [i32]) {
-    assert_eq!(input.len(), output.len(), "Input and output must be same length");
+    assert_eq!(
+        input.len(),
+        output.len(),
+        "Input and output must be same length"
+    );
 
     if input.is_empty() {
         return;
@@ -57,7 +61,7 @@ fn compute_deltas_scalar(input: &[i32], output: &mut [i32], mut prev: i32) {
 /// SIMD implementation using portable SIMD (8-wide i32 lanes)
 #[cfg(all(feature = "simd", target_feature = "simd128"))]
 fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
-    use core::simd::{i32x8, Simd, simd_swizzle};
+    use core::simd::{i32x8, simd_swizzle, Simd};
 
     const LANES: usize = 8;
     let len = input.len();
@@ -68,24 +72,28 @@ fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
     // Process 8 elements at a time
     while i < simd_end {
         let chunk = Simd::<i32, 8>::from_slice(&input[i..i + LANES]);
-        
+
         // Create previous vector: [prev, chunk[0], chunk[1], ..., chunk[6]]
         // Use SIMD shuffle (rotate_elements_right) instead of memory copy
-        let prev_vec = simd_swizzle!(Simd::from([prev, 0, 0, 0, 0, 0, 0, 0]), chunk, [
-            First(0),  // prev
-            Second(0), // chunk[0]
-            Second(1), // chunk[1]
-            Second(2), // chunk[2]
-            Second(3), // chunk[3]
-            Second(4), // chunk[4]
-            Second(5), // chunk[5]
-            Second(6), // chunk[6]
-        ]);
-        
+        let prev_vec = simd_swizzle!(
+            Simd::from([prev, 0, 0, 0, 0, 0, 0, 0]),
+            chunk,
+            [
+                First(0),  // prev
+                Second(0), // chunk[0]
+                Second(1), // chunk[1]
+                Second(2), // chunk[2]
+                Second(3), // chunk[3]
+                Second(4), // chunk[4]
+                Second(5), // chunk[5]
+                Second(6), // chunk[6]
+            ]
+        );
+
         // Compute deltas: current - previous
         let deltas = chunk - prev_vec;
         deltas.copy_to_slice(&mut output[i..i + LANES]);
-        
+
         // Update prev for next iteration
         prev = input[i + LANES - 1];
         i += LANES;
@@ -108,7 +116,11 @@ fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
 /// assert_eq!(output, [10, 13, 11, 14, 12]);
 /// ```
 pub fn reconstruct_from_deltas(deltas: &[i32], output: &mut [i32]) {
-    assert_eq!(deltas.len(), output.len(), "Input and output must be same length");
+    assert_eq!(
+        deltas.len(),
+        output.len(),
+        "Input and output must be same length"
+    );
 
     if deltas.is_empty() {
         return;
@@ -153,14 +165,14 @@ fn reconstruct_from_deltas_simd(deltas: &[i32], output: &mut [i32], mut prev: i3
     // Process 8 elements at a time
     while i < simd_end {
         let delta_chunk = Simd::<i32, 8>::from_slice(&deltas[i..i + LANES]);
-        
+
         // Prefix sum within the SIMD vector
         let mut result = [0i32; LANES];
         result[0] = prev + delta_chunk[0];
         for j in 1..LANES {
             result[j] = result[j - 1] + delta_chunk[j];
         }
-        
+
         output[i..i + LANES].copy_from_slice(&result);
         prev = result[LANES - 1];
         i += LANES;
@@ -186,7 +198,7 @@ fn reconstruct_from_deltas_simd(deltas: &[i32], output: &mut [i32], mut prev: i3
 /// ```
 pub fn sum_abs_deltas(deltas: &[i32], n: usize) -> u32 {
     let n = n.min(deltas.len());
-    
+
     #[cfg(all(feature = "simd", target_feature = "simd128"))]
     {
         sum_abs_deltas_simd(&deltas[..n])
@@ -201,7 +213,7 @@ pub fn sum_abs_deltas(deltas: &[i32], n: usize) -> u32 {
 /// Scalar implementation of sum of absolute deltas
 #[inline]
 fn sum_abs_deltas_scalar(deltas: &[i32]) -> u32 {
-    deltas.iter().map(|&x| x.abs() as u32).sum()
+    deltas.iter().map(|&x| x.unsigned_abs()).sum()
 }
 
 /// SIMD implementation of sum of absolute deltas
@@ -304,7 +316,7 @@ mod tests {
     fn test_sum_abs_deltas() {
         let deltas = [10, 3, -2, 3, -2, 1, -1, 0];
         let sum = sum_abs_deltas(&deltas, 16);
-        assert_eq!(sum, 10 + 3 + 2 + 3 + 2 + 1 + 1 + 0);
+        assert_eq!(sum, 10 + 3 + 2 + 3 + 2 + 1 + 1);
     }
 
     #[test]
@@ -315,9 +327,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_large_dataset() {
         // Test with realistic neural data size
-        let input: Vec<i32> = (0..1024).map(|i| (i % 10) as i32).collect();
+        extern crate alloc;
+        use alloc::vec;
+        use alloc::vec::Vec;
+
+        let input: Vec<i32> = (0..1024).map(|i| i % 10).collect();
         let mut deltas = vec![0; 1024];
         let mut reconstructed = vec![0; 1024];
 

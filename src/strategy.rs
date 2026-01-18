@@ -134,7 +134,7 @@ impl PacketHeader {
         }
 
         // Verify magic bytes
-        if &buffer[0..4] != &MAGIC_BYTES {
+        if buffer[0..4] != MAGIC_BYTES {
             return Err(CodecError::CorruptedHeader);
         }
 
@@ -152,8 +152,8 @@ impl PacketHeader {
         let strategy_id_raw = strategy_byte >> 2;
         let rice_k = strategy_byte & 0x03;
 
-        let strategy_id = StrategyId::from_u8(strategy_id_raw)
-            .ok_or(CodecError::InvalidStrategy {
+        let strategy_id =
+            StrategyId::from_u8(strategy_id_raw).ok_or(CodecError::InvalidStrategy {
                 strategy_id: strategy_id_raw,
             })?;
 
@@ -199,7 +199,7 @@ mod tests {
     fn test_invalid_magic_bytes() {
         let mut buffer = [0u8; 8];
         buffer[0] = 0xFF; // Wrong magic
-        
+
         let result = PacketHeader::read(&buffer);
         assert_eq!(result, Err(CodecError::CorruptedHeader));
     }
@@ -209,7 +209,7 @@ mod tests {
         let mut buffer = [0u8; 8];
         buffer[0..4].copy_from_slice(&MAGIC_BYTES);
         buffer[4] = 0xFF; // Unsupported version
-        
+
         let result = PacketHeader::read(&buffer);
         assert!(matches!(result, Err(CodecError::UnsupportedVersion { .. })));
     }
@@ -222,7 +222,7 @@ mod tests {
         buffer[5] = 0;
         buffer[6] = 64; // 64 channels
         buffer[7] = 0xFF; // Invalid strategy (top 6 bits)
-        
+
         let result = PacketHeader::read(&buffer);
         assert!(matches!(result, Err(CodecError::InvalidStrategy { .. })));
     }
@@ -231,7 +231,7 @@ mod tests {
     fn test_buffer_too_small() {
         let header = PacketHeader::new(128, StrategyId::DeltaVarint, 0);
         let mut buffer = [0u8; 4]; // Too small
-        
+
         let result = header.write(&mut buffer);
         assert!(matches!(result, Err(CodecError::BufferTooSmall { .. })));
     }
