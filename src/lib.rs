@@ -45,6 +45,7 @@ pub mod bitwriter;
 pub mod buffer;
 pub mod error;
 pub mod fixed_width;
+pub mod qos;
 pub mod rice;
 pub mod simd;
 pub mod strategy;
@@ -574,6 +575,104 @@ pub fn decompress<S: CompressionStrategy>(input: &[u8], output: &mut [i32]) -> C
     S::decompress(input, output)
 }
 
+/// High-level API: Compress data with QoS auto-throttling
+///
+/// Automatically selects the best compression strategy based on the quality level
+/// to maintain target bandwidth while preserving data fidelity.
+///
+/// # Arguments
+/// * `input` - Raw neural data
+/// * `output` - Output buffer for compressed packet
+/// * `workspace` - Temporary buffer for delta computation (must be >= input.len())
+/// * `quality` - Desired quality level
+///
+/// # Returns
+/// Number of bytes written, or error if buffer too small
+///
+/// # Example
+/// ```
+/// # use phantomcodec::{compress_adaptive, qos::QualityLevel};
+/// let data = [100, 356, 101, 412, 98];
+/// let mut compressed = [0u8; 100];
+/// let mut workspace = [0i32; 5];
+/// let size = compress_adaptive(&data, &mut compressed, &mut workspace, QualityLevel::Lossless).unwrap();
+/// assert!(size > 0);
+/// ```
+pub fn compress_adaptive(
+    input: &[i32],
+    output: &mut [u8],
+    workspace: &mut [i32],
+    quality: qos::QualityLevel,
+) -> CodecResult<usize> {
+    use qos::QualityLevel;
+
+    match quality {
+        QualityLevel::Lossless => {
+            // Use Rice coding for lossless compression
+            compress_voltage(input, output, workspace)
+        }
+        QualityLevel::ReducedPrecision => {
+            // Use FixedWidth for reduced precision but still lossless
+            compress_fixed_width(input, output, workspace)
+        }
+        QualityLevel::Lossy4Bit => {
+            // Use Packed4 for lossy compression
+            compress_packed4(input, output, workspace)
+        }
+        QualityLevel::SummaryOnly => {
+            // Use spike counts (varint) for summary
+            compress_spike_counts(input, output, workspace)
+        }
+    }
+}
+
+/// High-level API: Decompress data compressed with adaptive QoS
+///
+/// Automatically detects the compression strategy used and decompresses accordingly.
+///
+/// # Arguments
+/// * `input` - Compressed packet (including header)
+/// * `output` - Output buffer for decompressed data
+/// * `workspace` - Temporary buffer for delta reconstruction (must be >= channel_count)
+///
+/// # Returns
+/// Number of samples decompressed
+///
+/// # Example
+/// ```
+/// # use phantomcodec::{compress_adaptive, decompress_adaptive, qos::QualityLevel};
+/// let original = [100, 356, 101, 412, 98];
+/// let mut compressed = [0u8; 100];
+/// let mut workspace = [0i32; 5];
+/// let size = compress_adaptive(&original, &mut compressed, &mut workspace, QualityLevel::Lossless).unwrap();
+///
+/// let mut decompressed = [0i32; 5];
+/// let count = decompress_adaptive(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+/// assert_eq!(count, 5);
+/// ```
+pub fn decompress_adaptive(
+    input: &[u8],
+    output: &mut [i32],
+    workspace: &mut [i32],
+) -> CodecResult<usize> {
+    // Parse header to determine strategy
+    let header = PacketHeader::read(input)?;
+
+    // Decompress based on strategy
+    match header.strategy_id {
+        StrategyId::DeltaVarint => decompress_spike_counts(input, output, workspace),
+        StrategyId::Rice => decompress_voltage(input, output, workspace),
+        StrategyId::Packed4 => decompress_packed4(input, output, workspace),
+        StrategyId::FixedWidth => decompress_fixed_width(input, output, workspace),
+        StrategyId::QosAdaptive => {
+            // QosAdaptive is just a marker - actual strategy is one of the above
+            Err(CodecError::InvalidStrategy {
+                strategy_id: header.strategy_id as u8,
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -858,5 +957,101 @@ mod tests {
 
         assert_eq!(count, 32);
         assert_eq!(data, decompressed);
+    }
+
+    #[test]
+    fn test_adaptive_compression_lossless() {
+        use qos::QualityLevel;
+
+        let original = [100, 356, 101, 412, 98, 350, 102];
+        let mut compressed = [0u8; 100];
+        let mut decompressed = [0i32; 7];
+        let mut workspace = [0i32; 7];
+
+        let size =
+            compress_adaptive(&original, &mut compressed, &mut workspace, QualityLevel::Lossless)
+                .unwrap();
+        assert!(size > 0);
+
+        let count =
+            decompress_adaptive(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        assert_eq!(count, 7);
+        assert_eq!(original, decompressed);
+    }
+
+    #[test]
+    fn test_adaptive_compression_reduced_precision() {
+        use qos::QualityLevel;
+
+        let original = [100, 356, 101, 412, 98, 350, 102];
+        let mut compressed = [0u8; 100];
+        let mut decompressed = [0i32; 7];
+        let mut workspace = [0i32; 7];
+
+        let size = compress_adaptive(
+            &original,
+            &mut compressed,
+            &mut workspace,
+            QualityLevel::ReducedPrecision,
+        )
+        .unwrap();
+        assert!(size > 0);
+
+        let count =
+            decompress_adaptive(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        assert_eq!(count, 7);
+        assert_eq!(original, decompressed); // FixedWidth is still lossless
+    }
+
+    #[test]
+    fn test_adaptive_compression_lossy() {
+        use qos::QualityLevel;
+
+        let original = [768, 1024, 1280, 1536, 1792, 2048, 2304, 2560];
+        let mut compressed = [0u8; 50];
+        let mut decompressed = [0i32; 8];
+        let mut workspace = [0i32; 8];
+
+        let size = compress_adaptive(
+            &original,
+            &mut compressed,
+            &mut workspace,
+            QualityLevel::Lossy4Bit,
+        )
+        .unwrap();
+        assert!(size > 0);
+
+        let count =
+            decompress_adaptive(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        assert_eq!(count, 8);
+
+        // Lossy compression - verify quantization
+        for &value in decompressed.iter() {
+            assert_eq!(value % 256, 0);
+        }
+    }
+
+    #[test]
+    fn test_adaptive_compression_summary() {
+        use qos::QualityLevel;
+
+        let original = [1, 4, 2, 5, 3];
+        let mut compressed = [0u8; 100];
+        let mut decompressed = [0i32; 5];
+        let mut workspace = [0i32; 5];
+
+        let size = compress_adaptive(
+            &original,
+            &mut compressed,
+            &mut workspace,
+            QualityLevel::SummaryOnly,
+        )
+        .unwrap();
+        assert!(size > 0);
+
+        let count =
+            decompress_adaptive(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+        assert_eq!(count, 5);
+        assert_eq!(original, decompressed);
     }
 }
