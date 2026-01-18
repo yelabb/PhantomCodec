@@ -45,6 +45,7 @@ pub mod bitwriter;
 pub mod buffer;
 pub mod error;
 pub mod fixed_width;
+pub mod lpc;
 pub mod rice;
 pub mod simd;
 pub mod strategy;
