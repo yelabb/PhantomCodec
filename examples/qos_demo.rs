@@ -61,6 +61,8 @@ fn main() {
             // Record the compressed size
             controller.record_compressed_size(size);
 
+            // Note: Floating-point arithmetic used here for display purposes only.
+            // The QoS module itself uses pure integer arithmetic for no_std compatibility.
             println!(
                 "  {:?}: {} bytes ({:.1}% of raw)",
                 quality,
@@ -91,6 +93,7 @@ fn main() {
 
         // Select appropriate quality based on conditions
         let selected_quality = controller.select_quality(1000);
+        // Note: Floating-point used for display only (percentage calculation)
         println!("  Buffer occupancy: {} bytes ({:.0}% full)", 
             buffer_occupancy,
             (buffer_occupancy as f64 / config.max_buffer_bytes as f64) * 100.0

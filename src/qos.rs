@@ -26,6 +26,9 @@ impl QosConfig {
     /// # Arguments
     /// * `target_bandwidth` - Target bandwidth in bytes per second
     ///
+    /// # Panics
+    /// Panics if target_bandwidth is 0
+    ///
     /// # Example
     /// ```
     /// use phantomcodec::qos::{QosConfig, QosPriority, QualityLevel};
@@ -34,9 +37,10 @@ impl QosConfig {
     /// assert_eq!(config.target_bandwidth, 100_000);
     /// ```
     pub const fn new(target_bandwidth: u32) -> Self {
+        assert!(target_bandwidth > 0, "target_bandwidth must be greater than 0");
         Self {
             target_bandwidth,
-            max_buffer_bytes: 8192, // 8 KB default
+            max_buffer_bytes: 8192, // 8 KB default (must be > 0)
             priority: QosPriority::Balanced,
             min_quality: QualityLevel::Lossy4Bit,
         }
@@ -44,6 +48,7 @@ impl QosConfig {
 
     /// Create a QoS configuration optimized for spike preservation
     pub const fn preserve_spikes(target_bandwidth: u32) -> Self {
+        assert!(target_bandwidth > 0, "target_bandwidth must be greater than 0");
         Self {
             target_bandwidth,
             max_buffer_bytes: 8192,
@@ -54,6 +59,7 @@ impl QosConfig {
 
     /// Create a QoS configuration optimized for LFP preservation
     pub const fn preserve_lfp(target_bandwidth: u32) -> Self {
+        assert!(target_bandwidth > 0, "target_bandwidth must be greater than 0");
         Self {
             target_bandwidth,
             max_buffer_bytes: 8192,
@@ -229,7 +235,12 @@ impl QosController {
     /// The selected quality level
     pub fn select_quality(&mut self, sample_rate_hz: u32) -> QualityLevel {
         // Use integer arithmetic to avoid floating-point in no_std
-        let buffer_ratio_percent = (self.buffer_occupancy * 100) / self.config.max_buffer_bytes;
+        // Safety: max_buffer_bytes is guaranteed to be > 0 by QosConfig constructors
+        let buffer_ratio_percent = if self.config.max_buffer_bytes > 0 {
+            (self.buffer_occupancy * 100) / self.config.max_buffer_bytes
+        } else {
+            0 // Safety fallback, should never happen
+        };
         let estimated_bw = self.bandwidth_monitor.estimate_bandwidth(sample_rate_hz);
 
         // Check if we need to degrade quality (buffer > 80% OR bandwidth exceeded)
@@ -239,7 +250,8 @@ impl QosController {
         let should_improve = buffer_ratio_percent < 50 && estimated_bw < self.config.target_bandwidth;
 
         // Apply hysteresis to prevent oscillation
-        // Only degrade if we haven't reached minimum quality yet
+        // Only degrade if current quality is better than (less than) the minimum quality
+        // (QualityLevel ordering: Lossless < ReducedPrecision < Lossy4Bit < SummaryOnly)
         if should_degrade && self.current_quality < self.config.min_quality {
             self.hysteresis_counter += 1;
             if self.hysteresis_counter >= 3 {
@@ -431,9 +443,9 @@ mod tests {
         let samples = [0i32; 1024];
         let estimate = estimate_bandwidth(&samples);
 
-        // Should be roughly 60% of raw size
+        // Should be roughly 60% of raw size (using integer arithmetic: 3/5)
         let raw_size = 1024 * 4;
-        let expected = (raw_size as f32 * 0.6) as usize;
+        let expected = (raw_size * 3) / 5;
         assert_eq!(estimate, expected);
     }
 
