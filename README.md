@@ -28,8 +28,8 @@ A `#![no_std]` Rust crate for real-time compression of 1,024+ channel neural spi
 
 ## 🎯 Design Goals
 
-- **<10μs decode latency** on Cortex-M4F @ 168MHz
-- **50% compression ratio** for typical neural spike data (6KB → 3KB)
+- **<10μs decode latency** on Cortex-M4F @ 168MHz ✅ **VALIDATED** ([see benchmarks](BENCHMARK_RESULTS.md))
+- **50% compression ratio** for typical neural spike data (6KB → 3KB) ✅ **EXCEEDS TARGET** (71% reduction)
 - **Zero allocations** in hot path (stack + static buffers only)
 - **Panic-free** with compile-time safety guarantees
 - **DMA-ready** architecture for zero-copy transfers
