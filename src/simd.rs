@@ -1004,7 +1004,7 @@ mod cortex_m_dsp_integration_tests {
         // Test with mixed values including zero
         let deltas = [10, -5, 0, 3, -2, 0, 7, -1];
         let sum = cortex_m_dsp::sum_abs_deltas_dsp(&deltas, 8);
-        assert_eq!(sum, 10 + 5 + 0 + 3 + 2 + 0 + 7 + 1);
+        assert_eq!(sum, 10 + 5 + 3 + 2 + 7 + 1);
     }
 
     #[test]
@@ -1028,7 +1028,7 @@ mod cortex_m_dsp_integration_tests {
         // Test with small neural-like deltas (typical spike detection)
         let deltas = [1, -1, 0, 2, -2, 1, 0, -1, 1, 2];
         let sum = cortex_m_dsp::sum_abs_deltas_dsp(&deltas, 10);
-        assert_eq!(sum, 1 + 1 + 0 + 2 + 2 + 1 + 0 + 1 + 1 + 2);
+        assert_eq!(sum, 1 + 1 + 2 + 2 + 1 + 1 + 1 + 2);
     }
 
     #[test]
@@ -1052,7 +1052,10 @@ mod cortex_m_dsp_integration_tests {
         cortex_m_dsp::compute_deltas_dsp(&input, &mut output_dsp);
         compute_deltas(&input, &mut output_portable);
 
-        assert_eq!(output_dsp, output_portable, "DSP and portable implementations should match");
+        assert_eq!(
+            output_dsp, output_portable,
+            "DSP and portable implementations should match"
+        );
     }
 
     #[test]
@@ -1068,7 +1071,10 @@ mod cortex_m_dsp_integration_tests {
         cortex_m_dsp::reconstruct_from_deltas_dsp(&deltas, &mut output_dsp);
         reconstruct_from_deltas(&deltas, &mut output_portable);
 
-        assert_eq!(output_dsp, output_portable, "DSP and portable implementations should match");
+        assert_eq!(
+            output_dsp, output_portable,
+            "DSP and portable implementations should match"
+        );
     }
 
     #[test]
@@ -1078,11 +1084,14 @@ mod cortex_m_dsp_integration_tests {
         extern crate alloc;
 
         let deltas: alloc::vec::Vec<i32> = (0..100).map(|i| ((i * 7) % 20) - 10).collect();
-        
+
         let sum_dsp = cortex_m_dsp::sum_abs_deltas_dsp(&deltas, 100);
         let sum_portable = sum_abs_deltas(&deltas, 100);
 
-        assert_eq!(sum_dsp, sum_portable, "DSP and portable implementations should match");
+        assert_eq!(
+            sum_dsp, sum_portable,
+            "DSP and portable implementations should match"
+        );
     }
 
     #[test]
@@ -1101,7 +1110,7 @@ mod cortex_m_dsp_integration_tests {
         cortex_m_dsp::reconstruct_from_deltas_dsp(&deltas, &mut reconstructed);
 
         assert_eq!(input, reconstructed, "Roundtrip should preserve data");
-        
+
         // Also verify sum calculation
         let sum = cortex_m_dsp::sum_abs_deltas_dsp(&deltas, 1024);
         assert!(sum > 0, "Sum should be non-zero for varying data");
@@ -1113,7 +1122,7 @@ mod cortex_m_dsp_integration_tests {
         let deltas = [256, -256, 512, 0];
         let mut output = [0u8; 2];
         cortex_m_dsp::encode_fixed_4bit(&deltas, &mut output);
-        
+
         // Verify encoding (each delta is quantized to 4 bits)
         // 256 >> 8 = 1, -256 >> 8 = -1
         // 512 >> 8 = 2, 0 >> 8 = 0
@@ -1126,7 +1135,7 @@ mod cortex_m_dsp_integration_tests {
         let encoded = [0x21u8, 0x00]; // Encoded: 1, 2, 0, 0
         let mut output = [0i32; 4];
         cortex_m_dsp::decode_fixed_4bit(&encoded, 4, &mut output);
-        
+
         // Verify decoding produces quantized values
         assert_eq!(output.len(), 4);
         // Values should be multiples of 256 (quantization step)
@@ -1138,10 +1147,10 @@ mod cortex_m_dsp_integration_tests {
         let deltas = [256, 512, -256, 768, 0, -512];
         let mut encoded = [0u8; 3];
         let mut decoded = [0i32; 6];
-        
+
         cortex_m_dsp::encode_fixed_4bit(&deltas, &mut encoded);
         cortex_m_dsp::decode_fixed_4bit(&encoded, 6, &mut decoded);
-        
+
         // Verify each value matches after quantization
         for i in 0..deltas.len() {
             let expected = (deltas[i] >> 8).clamp(-8, 7) << 8;
