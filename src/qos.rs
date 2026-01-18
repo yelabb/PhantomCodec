@@ -16,7 +16,9 @@ pub struct QosConfig {
     /// Priority mode for compression decisions
     pub priority: QosPriority,
 
-    /// Minimum quality level (never go below this)
+    /// Minimum acceptable quality level (worst quality allowed)
+    /// Example: If set to `Lossy4Bit`, the system can degrade from `Lossless`
+    /// to `ReducedPrecision` to `Lossy4Bit`, but will never degrade to `SummaryOnly`.
     pub min_quality: QualityLevel,
 }
 
@@ -250,8 +252,14 @@ impl QosController {
         let should_improve = buffer_ratio_percent < 50 && estimated_bw < self.config.target_bandwidth;
 
         // Apply hysteresis to prevent oscillation
-        // Only degrade if current quality is better than (less than) the minimum quality
-        // (QualityLevel ordering: Lossless < ReducedPrecision < Lossy4Bit < SummaryOnly)
+        //
+        // Quality degradation logic:
+        // - QualityLevel ordering: Lossless(0) < ReducedPrecision(1) < Lossy4Bit(2) < SummaryOnly(3)
+        // - Lower numeric values = BETTER quality
+        // - min_quality is the WORST quality we're allowed to use
+        // - Example: If min_quality = Lossy4Bit (2), we can degrade TO Lossy4Bit but not beyond
+        // - So we can degrade only if: current_quality < min_quality (current is better than worst allowed)
+        // - We cannot degrade if: current_quality >= min_quality (already at or worse than worst allowed)
         if should_degrade && self.current_quality < self.config.min_quality {
             self.hysteresis_counter += 1;
             if self.hysteresis_counter >= 3 {
@@ -262,7 +270,7 @@ impl QosController {
                     QualityLevel::Lossy4Bit => QualityLevel::SummaryOnly,
                     QualityLevel::SummaryOnly => QualityLevel::SummaryOnly,
                 };
-                // Ensure we don't go below minimum quality
+                // Ensure we don't go below minimum quality (clamping safety check)
                 if self.current_quality > self.config.min_quality {
                     self.current_quality = self.config.min_quality;
                 }
