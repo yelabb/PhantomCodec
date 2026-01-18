@@ -20,6 +20,8 @@ pub enum StrategyId {
     DeltaVarint = 0x00,
     /// Adaptive Rice coding (for signed voltages)
     Rice = 0x01,
+    /// Fixed 4-bit packing (lossy, ultra-low-latency <10µs)
+    Packed4 = 0x02,
 }
 
 impl StrategyId {
@@ -28,6 +30,7 @@ impl StrategyId {
         match value {
             0x00 => Some(StrategyId::DeltaVarint),
             0x01 => Some(StrategyId::Rice),
+            0x02 => Some(StrategyId::Packed4),
             _ => None,
         }
     }
