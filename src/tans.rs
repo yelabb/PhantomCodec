@@ -11,9 +11,15 @@
 //!
 //! # Implementation
 //!
-//! This implementation uses a simplified tANS approach optimized for
-//! neural data characteristics. The frequency table is pre-computed
-//! to model typical voltage delta distributions.
+//! This is a simplified frequency-aware encoding inspired by tANS principles.
+//! A full tANS implementation would use state machines and more complex
+//! renormalization. This version prioritizes:
+//! - Implementation simplicity for no_std environments
+//! - Predictable performance characteristics
+//! - Frequency-based compression for neural data patterns
+//!
+//! The frequency table is pre-computed to model typical voltage delta
+//! distributions observed in neural recording systems.
 
 use crate::bitwriter::{BitReader, BitWriter};
 use crate::error::{CodecError, CodecResult};
@@ -23,17 +29,6 @@ pub const TABLE_SIZE: usize = 256;
 
 /// Number of symbols in our alphabet (for i8 voltage deltas: -128 to +127)
 pub const NUM_SYMBOLS: usize = 256;
-
-/// tANS decode table entry
-#[derive(Debug, Clone, Copy)]
-pub struct TansEntry {
-    /// Decoded symbol (voltage delta)
-    pub symbol: u8,
-    /// Number of bits to read from input stream
-    pub bits_to_read: u8,
-    /// Next state base value
-    pub next_state_base: u16,
-}
 
 /// Static frequency table for neural voltage deltas
 ///
@@ -77,7 +72,7 @@ const fn generate_frequency_table() -> [u16; NUM_SYMBOLS] {
     i = 31;
     while i <= 127 {
         freq[128 + i] = 1;
-        if 128 >= i {
+        if i < 128 {  // Changed from 128 >= i to i < 128 for clarity
             freq[128 - i] = 1;
         }
         i += 1;

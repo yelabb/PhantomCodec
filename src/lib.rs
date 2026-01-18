@@ -551,6 +551,9 @@ pub fn decompress_fixed_width(
     Ok(channel_count)
 }
 
+/// Maximum number of channels supported by tANS (stack array size limit)
+const MAX_TANS_CHANNELS: usize = 8192;
+
 /// High-level API: Compress voltage data using tANS entropy coding
 ///
 /// tANS (Tabled Asymmetric Numeral Systems) combines the compression ratio
@@ -561,6 +564,17 @@ pub fn decompress_fixed_width(
 /// - **Decode latency**: <10µs (target for 1024 channels)
 /// - **Compression ratio**: ~55-60% (better than Rice coding)
 /// - **Branchless decoding**: ~1-2 cycles per symbol
+///
+/// # Important Limitation
+/// ⚠️ **tANS operates on i8 deltas (-128 to +127)**
+///
+/// Delta values outside this range are **silently clamped**, which can lead
+/// to reconstruction errors. This compression method works best when:
+/// - Sequential samples have small differences (typical for neural data)
+/// - Base values are close to 0 or properly pre-processed
+/// - Deltas consistently fit within ±127
+///
+/// For data with large jumps between samples, consider using Rice coding instead.
 ///
 /// # Arguments
 /// * `input` - Raw voltage samples
@@ -604,7 +618,7 @@ pub fn compress_tans(
 
     // Convert i32 deltas to i8 for tANS (neural deltas are typically small)
     // Values outside -128..127 are clamped
-    let mut deltas_i8 = [0i8; 8192]; // Max supported channels
+    let mut deltas_i8 = [0i8; MAX_TANS_CHANNELS];
     if input.len() > deltas_i8.len() {
         return Err(CodecError::BufferTooSmall {
             required: input.len(),
@@ -684,7 +698,7 @@ pub fn decompress_tans(
     }
 
     // Decode deltas with tANS
-    let mut deltas_i8 = [0i8; 8192]; // Max supported channels
+    let mut deltas_i8 = [0i8; MAX_TANS_CHANNELS];
     if channel_count > deltas_i8.len() {
         return Err(CodecError::BufferTooSmall {
             required: channel_count,
