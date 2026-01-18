@@ -5,7 +5,7 @@
 //!
 //! # Performance
 //!
-//! This module is optimized for <10μs encode/decode latency:
+//! This module is optimized for real-time embedded operation (~130-170μs decode on Cortex-M4F):
 //! - **Word-aligned bulk operations**: No bit-by-bit loops
 //! - **Branchless logic**: Uses bitwise operations instead of conditionals
 //! - **Fast paths**: Optimized single-byte writes when possible
@@ -93,7 +93,7 @@ impl<'a> BitWriter<'a> {
     /// Write `width` bits from `value` (LSB-aligned)
     ///
     /// **Performance**: Uses optimized word-aligned bulk operations instead of
-    /// bit-by-bit loops. This is critical for <10μs latency targets.
+    /// bit-by-bit loops. This is critical for meeting real-time latency requirements.
     ///
     /// Automatically clears each byte before writing the first bit to it,
     /// ensuring correct behavior even with dirty (reused) buffers.

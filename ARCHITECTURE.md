@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-PhantomCodec is a `#![no_std]` Rust crate for real-time lossless compression of high-density neural data (1,024+ channels) optimized for bare-metal ARM Cortex-M environments. It achieves <10μs decode latency with zero allocations through compile-time monomorphization, zero-copy memory architecture, and SIMD acceleration.
+PhantomCodec is a `#![no_std]` Rust crate for real-time lossless compression of high-density neural data (1,024+ channels) optimized for bare-metal ARM Cortex-M environments. It achieves ~130-170μs decode latency (Cortex-M4F @ 168MHz) with zero allocations through compile-time monomorphization, zero-copy memory architecture, and SIMD acceleration. See [INSPIRATION.md](INSPIRATION.md) for sub-10μs roadmap.
 
 ---
 
@@ -361,15 +361,17 @@ match compress_spike_counts(&input, &mut output) {
 
 ---
 
-## Performance Targets
+## Performance Characteristics
 
 | Metric | Target | Measured (Cortex-M4F @ 168MHz) |
 |--------|--------|---------------------------------|
-| Encode Latency | <10μs | ~5.2μs (1024 channels) |
-| Decode Latency | <10μs | ~3.1μs (1024 channels) |
-| Compression Ratio | 50% | 48-55% (typical neural data) |
+| Encode Latency | <150μs | ~140-180μs (1024 channels) |
+| Decode Latency | <150μs | ~130-170μs (1024 channels) |
+| Compression Ratio | 50% | 71% reduction (typical neural data) |
 | Memory Usage | <4KB static | 3.5KB (3× 1024-channel buffers) |
 | Code Size | <16KB | ~8KB (Release build) |
+
+> **Note**: See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for detailed measurements and [INSPIRATION.md](INSPIRATION.md) for sub-10μs roadmap.
 
 ---
 

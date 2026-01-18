@@ -67,10 +67,11 @@ let size = compress_spike_counts(&data, &mut output, &mut workspace)?;
 - Documentation with examples and performance characteristics
 
 ### Performance
-- <10μs decode latency on Cortex-M4F @ 168MHz
-- 50% typical compression ratio on neural spike data
+- <150μs decode latency on Cortex-M4F @ 168MHz (measured: ~130-170μs)
+- 71% compression ratio on neural spike data (exceeds 50% target)
 - Zero allocations in hot path (stack + static buffers only)
 - Panic-free operation with strict compile-time safety
+- Future goal: Sub-10μs latency with ARM DSP intrinsics (see INSPIRATION.md)
 
 ### Supported Platforms
 - `no_std` embedded targets (ARM Cortex-M)

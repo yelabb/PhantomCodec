@@ -60,7 +60,7 @@ Real measurements require:
 Tests compression time for 128, 256, 512, 1024 channels
 
 ### 2. Decompression Performance  
-**CRITICAL**: This validates the <10μs claim (scaled to your hardware)
+**CRITICAL**: Tracks progress toward real-time embedded performance (<150µs measured, <10µs future goal)
 
 ### 3. Compression Ratio
 Shows actual compression percentage

@@ -1,7 +1,7 @@
 //! PhantomCodec - Real-time lossless compression for high-density neural data
 //!
 //! A `#![no_std]` compatible crate for compressing 1,024+ channel neural spike data
-//! with <10μs decode latency and zero allocations in the hot path.
+//! with <150μs decode latency (measured on Cortex-M4F @ 168MHz) and zero allocations in the hot path.
 //!
 //! # Compiler Requirements
 //!

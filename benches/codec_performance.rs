@@ -36,7 +36,7 @@ fn bench_compress(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark decompression - THIS IS THE CRITICAL <10μs TARGET
+/// Benchmark decompression - measuring progress toward <10μs future goal (see INSPIRATION.md)
 fn bench_decompress(c: &mut Criterion) {
     let mut group = c.benchmark_group("decompression");
     
