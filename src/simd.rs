@@ -788,8 +788,8 @@ pub mod helium_mve {
         
         // Scalar fallback for now
         for (val, out) in values.iter().zip(output.iter_mut()) {
-            let n = *val as i32;
-            *out = ((n << 1) ^ (n >> 31)) as u16;
+            let n = *val;
+            *out = (((n << 1) as u16) ^ ((n >> 15) as u16));
         }
     }
 
@@ -797,8 +797,8 @@ pub mod helium_mve {
     #[cfg(not(all(target_arch = "arm", target_feature = "mve")))]
     pub fn zigzag_encode_mve(values: &[i16], output: &mut [u16]) {
         for (val, out) in values.iter().zip(output.iter_mut()) {
-            let n = *val as i32;
-            *out = ((n << 1) ^ (n >> 31)) as u16;
+            let n = *val;
+            *out = (((n << 1) as u16) ^ ((n >> 15) as u16));
         }
     }
 
