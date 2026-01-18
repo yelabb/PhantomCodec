@@ -363,15 +363,15 @@ match compress_spike_counts(&input, &mut output) {
 
 ## Performance Characteristics
 
-| Metric | Target | Measured (Cortex-M4F @ 168MHz) |
+| Metric | Target | Current Status |
 |--------|--------|---------------------------------|
-| Encode Latency | <150μs | ~140-180μs (1024 channels) |
-| Decode Latency | <150μs | ~130-170μs (1024 channels) |
-| Compression Ratio | 50% | 71% reduction (typical neural data) |
-| Memory Usage | <4KB static | 3.5KB (3× 1024-channel buffers) |
-| Code Size | <16KB | ~8KB (Release build) |
+| Encode Latency | <150μs | ~140-180μs (1024 channels) - **Projected** from PC benchmarks |
+| Decode Latency | <150μs | ~130-170μs (1024 channels) - **Projected** from PC benchmarks |
+| Compression Ratio | 50% | 71% reduction (typical neural data) - **Verified** |
+| Memory Usage | <4KB static | 3.5KB (3× 1024-channel buffers) - **Verified** |
+| Code Size | <16KB | ~8KB (Release build) - **Verified** |
 
-> **Note**: See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for detailed measurements and [INSPIRATION.md](INSPIRATION.md) for sub-10μs roadmap.
+> **⚠️ Important**: Latency figures are **projected estimates** from PC benchmarks, not actual embedded measurements. See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for methodology and [INSPIRATION.md](INSPIRATION.md) for sub-10μs roadmap.
 
 ---
 

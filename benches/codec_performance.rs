@@ -2,11 +2,6 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use phantomcodec::simd::{compute_deltas, reconstruct_from_deltas, sum_abs_deltas};
 use phantomcodec::{compress_spike_counts, decompress_spike_counts};
 
-#[cfg(feature = "cortex-m-dsp")]
-use phantomcodec::simd::cortex_m_dsp::{
-    decode_fixed_4bit as decode_4bit, encode_fixed_4bit as encode_4bit,
-};
-
 /// Benchmark compression of neural spike data
 fn bench_compress(c: &mut Criterion) {
     let mut group = c.benchmark_group("compression");
@@ -231,38 +226,9 @@ fn bench_simd_deltas(c: &mut Criterion) {
 /// Benchmark ultra-low-latency 4-bit fixed-width encoding (Phase 2 from INSPIRATION.md)
 /// Target: <10µs for 1024 channels on Cortex-M4F
 fn bench_fixed_4bit_encoding(c: &mut Criterion) {
+    use phantomcodec::simd::{decode_fixed_4bit, encode_fixed_4bit};
+
     let mut group = c.benchmark_group("fixed_4bit");
-
-    // Use actual production implementations when cortex-m-dsp feature is enabled
-    #[cfg(not(feature = "cortex-m-dsp"))]
-    fn encode_4bit(deltas: &[i32], output: &mut [u8]) {
-        let pairs = deltas.len() / 2;
-        for i in 0..pairs {
-            let d0 = ((deltas[i * 2] >> 8).clamp(-8, 7) & 0x0F) as u8;
-            let d1 = ((deltas[i * 2 + 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
-            output[i] = (d1 << 4) | d0;
-        }
-        if deltas.len() % 2 == 1 {
-            let d = ((deltas[deltas.len() - 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
-            output[pairs] = d;
-        }
-    }
-
-    #[cfg(not(feature = "cortex-m-dsp"))]
-    fn decode_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) {
-        let pairs = sample_count / 2;
-        for i in 0..pairs {
-            let packed = input[i];
-            let d0 = ((packed & 0x0F) as i8) << 4 >> 4;
-            let d1 = ((packed >> 4) as i8) << 4 >> 4;
-            output[i * 2] = (d0 as i32) << 8;
-            output[i * 2 + 1] = (d1 as i32) << 8;
-        }
-        if sample_count % 2 == 1 {
-            let d = ((input[pairs] & 0x0F) as i8) << 4 >> 4;
-            output[sample_count - 1] = (d as i32) << 8;
-        }
-    }
 
     for &num_channels in &[128_usize, 256, 512, 1024] {
         // Simulate neural delta data (small values that fit in 4-bit quantized)
@@ -277,24 +243,25 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
             &num_channels,
             |b, _| {
                 b.iter(|| {
-                    encode_4bit(black_box(&deltas), black_box(&mut encoded));
+                    encode_fixed_4bit(black_box(&deltas), black_box(&mut encoded)).unwrap();
                 });
             },
         );
 
         // Pre-encode for decode benchmark
-        encode_4bit(&deltas, &mut encoded);
+        encode_fixed_4bit(&deltas, &mut encoded).unwrap();
 
         group.bench_with_input(
             BenchmarkId::new("decode_4bit", num_channels),
             &num_channels,
             |b, _| {
                 b.iter(|| {
-                    decode_4bit(
+                    decode_fixed_4bit(
                         black_box(&encoded),
                         black_box(num_channels),
                         black_box(&mut decoded),
-                    );
+                    )
+                    .unwrap();
                 });
             },
         );

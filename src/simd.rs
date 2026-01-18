@@ -29,7 +29,7 @@
 //! - Lossy quantization (±128) acceptable for spike detection
 //! - Pure bit-shifting operations, no entropy coding overhead
 
-/// Calculate deltas between consecutive samples: delta[i] = input[i] - input[i-1]
+/// Calculate deltas between consecutive samples: delta\[i\] = input\[i\] - input\[i-1\]
 ///
 /// First element is preserved as-is (no previous value to delta against).
 /// Uses SIMD acceleration when available.
@@ -122,7 +122,7 @@ fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
     compute_deltas_scalar(&input[i..], &mut output[i..], prev);
 }
 
-/// Reconstruct original values from deltas: output[i] = output[i-1] + delta[i]
+/// Reconstruct original values from deltas: output\[i\] = output\[i-1\] + delta\[i\]
 ///
 /// First element is preserved as-is (it's the initial value, not a delta).
 ///
@@ -203,7 +203,7 @@ fn reconstruct_from_deltas_simd(deltas: &[i32], output: &mut [i32], mut prev: i3
 
 /// Calculate sum of absolute deltas for adaptive Rice parameter selection
 ///
-/// Returns the sum of |delta[i]| for the first `n` samples (or all if n > len).
+/// Returns the sum of |delta\[i\]| for the first `n` samples (or all if n > len).
 /// This heuristic is used to choose Rice parameter k:
 /// - High sum → high activity → use k=3
 /// - Low sum → low activity → use k=1
@@ -283,6 +283,8 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
 /// All functions have fallback implementations for non-ARM targets.
 #[cfg(feature = "cortex-m-dsp")]
 pub mod cortex_m_dsp {
+    use crate::error::{CodecError, CodecResult};
+
     #[cfg(target_arch = "arm")]
     use core::arch::arm::{__qadd16, __qsub16, __sadd16, __ssub16, __usad8};
 
@@ -475,10 +477,16 @@ pub mod cortex_m_dsp {
     /// - Compression: 50% (down from 71% with Rice)
     /// - Speed: ~10µs for 1024 channels (13-17x faster)
     /// - Lossy: Quantization error ±128 (acceptable for spike detection)
-    pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) {
+    ///
+    /// # Returns
+    /// Number of bytes written to output buffer
+    pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) -> CodecResult<usize> {
         #[allow(clippy::manual_div_ceil)] // div_ceil is unstable, need stable Rust support
         let out_len = (deltas.len() + 1) / 2;
-        assert!(output.len() >= out_len, "Output buffer too small");
+
+        if output.len() < out_len {
+            return Err(CodecError::BufferTooSmall { required: out_len });
+        }
 
         let pairs = deltas.len() / 2;
 
@@ -496,6 +504,8 @@ pub mod cortex_m_dsp {
             let d = ((deltas[deltas.len() - 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
             output[pairs] = d;
         }
+
+        Ok(out_len)
     }
 
     /// Fast 4-bit fixed-width decoding
@@ -505,21 +515,32 @@ pub mod cortex_m_dsp {
     /// **Note**: This function outputs deltas, not reconstructed original values.
     /// To get original values, call `reconstruct_from_deltas()` on the output.
     ///
+    /// # Returns
+    /// Number of samples decoded
+    ///
     /// # Example workflow
     /// ```ignore
     /// // Encoding
     /// let deltas = compute_deltas(&original);
     /// let mut encoded = vec![0u8; deltas.len().div_ceil(2)];
-    /// encode_fixed_4bit(&deltas, &mut encoded);
+    /// encode_fixed_4bit(&deltas, &mut encoded)?;
     ///
     /// // Decoding  
     /// let mut decoded_deltas = vec![0i32; original.len()];
-    /// decode_fixed_4bit(&encoded, original.len(), &mut decoded_deltas);
+    /// decode_fixed_4bit(&encoded, original.len(), &mut decoded_deltas)?;
     /// let mut reconstructed = vec![0i32; original.len()];
     /// reconstruct_from_deltas(&decoded_deltas, &mut reconstructed);
     /// ```
-    pub fn decode_fixed_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) {
-        assert!(output.len() >= sample_count, "Output buffer too small");
+    pub fn decode_fixed_4bit(
+        input: &[u8],
+        sample_count: usize,
+        output: &mut [i32],
+    ) -> CodecResult<usize> {
+        if output.len() < sample_count {
+            return Err(CodecError::BufferTooSmall {
+                required: sample_count,
+            });
+        }
 
         let pairs = sample_count / 2;
 
@@ -540,6 +561,8 @@ pub mod cortex_m_dsp {
             let d = ((input[pairs] & 0x0F) as i8) << 4 >> 4;
             output[sample_count - 1] = (d as i32) << 8;
         }
+
+        Ok(sample_count)
     }
 }
 
@@ -549,6 +572,77 @@ pub use cortex_m_dsp::{
     compute_deltas_dsp, decode_fixed_4bit, encode_fixed_4bit, reconstruct_from_deltas_dsp,
     sum_abs_deltas_dsp,
 };
+
+// Portable implementations when cortex-m-dsp is not enabled
+#[cfg(not(feature = "cortex-m-dsp"))]
+mod portable {
+    use crate::error::{CodecError, CodecResult};
+
+    /// Ultra-fast 4-bit fixed-width encoding (Portable, Stable Rust)
+    ///
+    /// **Lossy**: Quantizes deltas to ±128 range (divides by 256, clamps to 4-bit signed)
+    ///
+    /// Returns the number of bytes written to output.
+    pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) -> CodecResult<usize> {
+        #[allow(clippy::manual_div_ceil)]
+        let out_len = (deltas.len() + 1) / 2;
+
+        if output.len() < out_len {
+            return Err(CodecError::BufferTooSmall { required: out_len });
+        }
+
+        let pairs = deltas.len() / 2;
+
+        for i in 0..pairs {
+            let d0 = ((deltas[i * 2] >> 8).clamp(-8, 7) & 0x0F) as u8;
+            let d1 = ((deltas[i * 2 + 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
+            output[i] = (d1 << 4) | d0;
+        }
+
+        if deltas.len() % 2 == 1 {
+            let d = ((deltas[deltas.len() - 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
+            output[pairs] = d;
+        }
+
+        Ok(out_len)
+    }
+
+    /// Ultra-fast 4-bit fixed-width decoding (Portable, Stable Rust)
+    ///
+    /// Returns the number of samples decoded.
+    pub fn decode_fixed_4bit(
+        input: &[u8],
+        sample_count: usize,
+        output: &mut [i32],
+    ) -> CodecResult<usize> {
+        if output.len() < sample_count {
+            return Err(CodecError::BufferTooSmall {
+                required: sample_count,
+            });
+        }
+
+        let pairs = sample_count / 2;
+
+        for i in 0..pairs {
+            let packed = input[i];
+            let d0 = ((packed & 0x0F) as i8) << 4 >> 4;
+            let d1 = ((packed >> 4) as i8) << 4 >> 4;
+            output[i * 2] = (d0 as i32) << 8;
+            output[i * 2 + 1] = (d1 as i32) << 8;
+        }
+
+        if sample_count % 2 == 1 {
+            let d = ((input[pairs] & 0x0F) as i8) << 4 >> 4;
+            output[sample_count - 1] = (d as i32) << 8;
+        }
+
+        Ok(sample_count)
+    }
+}
+
+// Re-export portable functions when cortex-m-dsp is not enabled
+#[cfg(not(feature = "cortex-m-dsp"))]
+pub use portable::{decode_fixed_4bit, encode_fixed_4bit};
 
 #[cfg(test)]
 mod tests {
@@ -1122,7 +1216,7 @@ mod cortex_m_dsp_integration_tests {
         // Test 4-bit encoding
         let deltas = [256, -256, 512, 0];
         let mut output = [0u8; 2];
-        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut output);
+        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut output).unwrap();
 
         // Verify encoding (each delta is quantized to 4 bits)
         // 256 >> 8 = 1, -256 >> 8 = -1
@@ -1135,7 +1229,7 @@ mod cortex_m_dsp_integration_tests {
         // Test 4-bit decoding
         let encoded = [0x21u8, 0x00]; // Encoded: 1, 2, 0, 0
         let mut output = [0i32; 4];
-        cortex_m_dsp::decode_fixed_4bit(&encoded, 4, &mut output);
+        cortex_m_dsp::decode_fixed_4bit(&encoded, 4, &mut output).unwrap();
 
         // Verify decoding produces quantized values
         assert_eq!(output.len(), 4);
@@ -1149,8 +1243,8 @@ mod cortex_m_dsp_integration_tests {
         let mut encoded = [0u8; 3];
         let mut decoded = [0i32; 6];
 
-        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut encoded);
-        cortex_m_dsp::decode_fixed_4bit(&encoded, 6, &mut decoded);
+        cortex_m_dsp::encode_fixed_4bit(&deltas, &mut encoded).unwrap();
+        cortex_m_dsp::decode_fixed_4bit(&encoded, 6, &mut decoded).unwrap();
 
         // Verify each value matches after quantization
         for i in 0..deltas.len() {
