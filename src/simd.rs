@@ -401,48 +401,12 @@ pub mod cortex_m_dsp {
         super::compute_deltas(input, output);
     }
 
-    /// Parallel delta reconstruction using ARM SADD16 (dual 16-bit addition)
+    /// Delta reconstruction (prefix sum)
     ///
-    /// Reconstructs original values from deltas using prefix sum.
-    /// Uses SADD16 for dual 16-bit saturating addition.
-    ///
-    /// Note: Prefix sum has data dependencies, so parallelism is limited.
-    /// We still get benefit from reduced instruction count per sample.
-    #[cfg(target_arch = "arm")]
-    pub fn reconstruct_from_deltas_dsp(deltas: &[i32], output: &mut [i32]) {
-        assert_eq!(
-            deltas.len(),
-            output.len(),
-            "Input and output must be same length"
-        );
-
-        if deltas.is_empty() {
-            return;
-        }
-
-        // First element is the base value
-        output[0] = deltas[0];
-
-        // Prefix sum has inherent data dependency, process sequentially
-        // but use saturating arithmetic for safety
-        let mut prev = i32_to_q15(output[0]);
-
-        for i in 1..deltas.len() {
-            let delta = i32_to_q15(deltas[i]);
-            let packed_prev = pack_i16_pair(prev, 0);
-            let packed_delta = pack_i16_pair(delta, 0);
-
-            // QADD16: Saturating dual 16-bit addition
-            let result = unsafe { __qadd16(packed_prev as i32, packed_delta as i32) };
-            let (sum, _) = unpack_i16_pair(result as u32);
-
-            output[i] = q15_to_i32(sum);
-            prev = sum;
-        }
-    }
-
-    /// Fallback implementation for non-ARM targets
-    #[cfg(not(target_arch = "arm"))]
+    /// Note: Prefix sum has inherent sequential dependencies that prevent
+    /// effective SIMD parallelization. Each output depends on the previous one.
+    /// Therefore, this function uses the standard scalar implementation
+    /// rather than attempting inefficient SIMD operations.
     pub fn reconstruct_from_deltas_dsp(deltas: &[i32], output: &mut [i32]) {
         super::reconstruct_from_deltas(deltas, output);
     }
@@ -450,7 +414,7 @@ pub mod cortex_m_dsp {
     /// Sum of absolute deltas using ARM USAD8 (unsigned sum of absolute differences)
     ///
     /// USAD8 computes sum of absolute differences of 4 bytes in parallel.
-    /// For 16-bit data, we process 2 samples at a time.
+    /// We process 4 samples at a time by packing their absolute values as bytes.
     ///
     /// Returns sum of |delta[i]| for Rice parameter selection.
     #[cfg(target_arch = "arm")]
@@ -535,7 +499,24 @@ pub mod cortex_m_dsp {
 
     /// Fast 4-bit fixed-width decoding
     ///
-    /// Reverses encode_fixed_4bit: unpack → dequantize → reconstruct
+    /// Decodes 4-bit quantized deltas back to full i32 deltas: unpack → dequantize
+    ///
+    /// **Note**: This function outputs deltas, not reconstructed original values.
+    /// To get original values, call `reconstruct_from_deltas()` on the output.
+    ///
+    /// # Example workflow
+    /// ```ignore
+    /// // Encoding
+    /// let deltas = compute_deltas(&original);
+    /// let mut encoded = vec![0u8; deltas.len().div_ceil(2)];
+    /// encode_fixed_4bit(&deltas, &mut encoded);
+    ///
+    /// // Decoding  
+    /// let mut decoded_deltas = vec![0i32; original.len()];
+    /// decode_fixed_4bit(&encoded, original.len(), &mut decoded_deltas);
+    /// let mut reconstructed = vec![0i32; original.len()];
+    /// reconstruct_from_deltas(&decoded_deltas, &mut reconstructed);
+    /// ```
     pub fn decode_fixed_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) {
         assert!(output.len() >= sample_count, "Output buffer too small");
 
