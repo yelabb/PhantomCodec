@@ -97,7 +97,7 @@ pub fn zigzag_decode(n: u32) -> i32 {
 ///
 /// # Returns
 /// Number of bytes written
-#[allow(clippy::needless_range_loop)] // Bit manipulation requires indexed access
+#[allow(clippy::needless_range_loop)] // Indexed access for performance-critical packing
 pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> CodecResult<usize> {
     let count = deltas.len().min(BLOCK_SIZE);
 
@@ -116,11 +116,6 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
         });
     }
 
-    // Zero the output buffer region to ensure clean bit operations
-    for byte in output[0..bytes_needed].iter_mut() {
-        *byte = 0;
-    }
-
     // Write header: [7:4] reserved, [3:0] bit_width
     output[0] = bit_width & 0x0F;
 
@@ -129,23 +124,33 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
         return Ok(1);
     }
 
-    // Pack samples using bit-level packing
-    let mut bit_pos = 0usize; // Current bit position in output (relative to byte 1)
+    // === OPTIMIZED BIT PACKING ===
+    // Use 64-bit accumulator to batch writes, eliminating per-bit operations
+    let mask = (1u32 << bit_width) - 1;
+    let mut accumulator: u64 = 0;
+    let mut acc_bits: u32 = 0; // Number of valid bits in accumulator
+    let mut out_idx = 1usize; // Start after header
 
     for i in 0..count {
         let zigzag = zigzag_encode(deltas[i]);
-        let value = zigzag & ((1u32 << bit_width) - 1); // Mask to bit_width
+        let value = (zigzag & mask) as u64;
 
-        // Write value bit by bit
-        for bit in 0..bit_width {
-            let bit_value = (value >> bit) & 1;
-            if bit_value != 0 {
-                let byte_idx = 1 + (bit_pos / 8);
-                let bit_idx = bit_pos % 8;
-                output[byte_idx] |= 1 << bit_idx;
-            }
-            bit_pos += 1;
+        // Add value to accumulator
+        accumulator |= value << acc_bits;
+        acc_bits += bit_width as u32;
+
+        // Flush complete bytes from accumulator
+        while acc_bits >= 8 {
+            output[out_idx] = (accumulator & 0xFF) as u8;
+            accumulator >>= 8;
+            acc_bits -= 8;
+            out_idx += 1;
         }
+    }
+
+    // Flush remaining bits (if any)
+    if acc_bits > 0 {
+        output[out_idx] = (accumulator & 0xFF) as u8;
     }
 
     Ok(bytes_needed)
@@ -192,8 +197,8 @@ pub fn decode_block_32(input: &[u8], count: usize, output: &mut [i32]) -> CodecR
     Ok(bytes_consumed)
 }
 
-/// Specialized decoder for 4-bit width (8 samples per 32-bit word)
-#[allow(clippy::needless_range_loop)] // Indexed access needed for bit manipulation
+/// Specialized decoder for 4-bit width - optimized for 2 samples per byte
+/// Processes pairs of nibbles without bit-level iteration
 fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
     let bits_needed = 4 * count;
     let bytes_needed = 1 + (bits_needed + 7) / 8;
@@ -204,31 +209,25 @@ fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
 
     let data = &input[1..];
 
-    for i in 0..count {
-        let byte_idx = (i * 4) / 8;
-        let bit_offset = (i * 4) % 8;
+    // Process pairs of samples (2 per byte) - no bit-level iteration
+    let pairs = count / 2;
+    for i in 0..pairs {
+        let byte = data[i];
+        // Extract both nibbles with simple shifts - no division/modulo
+        output[i * 2] = zigzag_decode((byte & 0x0F) as u32);
+        output[i * 2 + 1] = zigzag_decode((byte >> 4) as u32);
+    }
 
-        let value = if bit_offset + 4 <= 8 {
-            // Value fits in single byte
-            (data[byte_idx] >> bit_offset) & 0x0F
-        } else {
-            // Value spans two bytes - verify we have access to second byte
-            if byte_idx + 1 >= data.len() {
-                return Err(CodecError::UnexpectedEndOfInput);
-            }
-            let low_bits = data[byte_idx] >> bit_offset;
-            let high_bits = data[byte_idx + 1] << (8 - bit_offset);
-            (low_bits | high_bits) & 0x0F
-        };
-
-        output[i] = zigzag_decode(value as u32);
+    // Handle odd sample if present
+    if count % 2 == 1 {
+        output[count - 1] = zigzag_decode((data[pairs] & 0x0F) as u32);
     }
 
     Ok(bytes_needed)
 }
 
-/// Specialized decoder for 8-bit width (4 samples per 32-bit word)
-#[allow(clippy::needless_range_loop)] // Indexed access needed for direct byte reading
+/// Specialized decoder for 8-bit width - direct byte copy, maximum speed
+/// One sample per byte, no bit manipulation needed
 fn decode_width_8(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
     let bytes_needed = 1 + count;
 
@@ -238,15 +237,17 @@ fn decode_width_8(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
 
     let data = &input[1..];
 
-    for i in 0..count {
-        output[i] = zigzag_decode(data[i] as u32);
+    // Direct byte-to-sample conversion - maximum throughput
+    for (out, &byte) in output[..count].iter_mut().zip(data[..count].iter()) {
+        *out = zigzag_decode(byte as u32);
     }
 
     Ok(bytes_needed)
 }
 
 /// Generic decoder for any bit width (1-16 bits)
-#[allow(clippy::needless_range_loop)] // Indexed access required for bit-level operations
+/// Uses 64-bit accumulator for branchless, high-performance unpacking
+#[allow(clippy::needless_range_loop)] // Index needed for output assignment in accumulator loop
 fn decode_width_generic(
     input: &[u8],
     count: usize,
@@ -261,19 +262,26 @@ fn decode_width_generic(
     }
 
     let data = &input[1..];
-    let mut bit_pos = 0usize;
+    let mask = (1u32 << bit_width) - 1;
+
+    // === OPTIMIZED BIT UNPACKING ===
+    // Use 64-bit accumulator to batch reads, eliminating per-bit operations
+    let mut accumulator: u64 = 0;
+    let mut acc_bits: u32 = 0; // Number of valid bits in accumulator
+    let mut in_idx = 0usize;
 
     for i in 0..count {
-        let mut value = 0u32;
-
-        // Read bit_width bits
-        for bit in 0..bit_width {
-            let byte_idx = bit_pos / 8;
-            let bit_idx = bit_pos % 8;
-            let bit_value = (data[byte_idx] >> bit_idx) & 1;
-            value |= (bit_value as u32) << bit;
-            bit_pos += 1;
+        // Refill accumulator when needed (load up to 8 bytes at a time)
+        while acc_bits < bit_width as u32 && in_idx < data.len() {
+            accumulator |= (data[in_idx] as u64) << acc_bits;
+            acc_bits += 8;
+            in_idx += 1;
         }
+
+        // Extract value from accumulator
+        let value = (accumulator & mask as u64) as u32;
+        accumulator >>= bit_width;
+        acc_bits -= bit_width as u32;
 
         output[i] = zigzag_decode(value);
     }
