@@ -476,6 +476,7 @@ pub mod cortex_m_dsp {
     /// - Speed: ~10µs for 1024 channels (13-17x faster)
     /// - Lossy: Quantization error ±128 (acceptable for spike detection)
     pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) {
+        #[allow(clippy::manual_div_ceil)] // div_ceil is unstable, need stable Rust support
         let out_len = (deltas.len() + 1) / 2;
         assert!(output.len() >= out_len, "Output buffer too small");
 
