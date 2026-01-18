@@ -39,6 +39,46 @@ impl StrategyId {
     }
 }
 
+/// Predictor mode for residual computation
+///
+/// Higher-order predictors produce smaller residuals for smooth signals,
+/// improving compression ratios with negligible CPU overhead.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PredictorMode {
+    /// Simple delta: residual[i] = x[i] - x[i-1]
+    /// Best for: Random walk signals, spike counts
+    Delta = 0x00,
+    
+    /// Second-order LPC: residual[i] = x[i] - (2*x[i-1] - x[i-2])
+    /// Models constant velocity (linear trend continuation)
+    /// Best for: Smooth LFP signals, wavy data
+    /// Expected improvement: ~20% better compression vs Delta
+    LPC2 = 0x01,
+    
+    /// Third-order LPC: residual[i] = x[i] - (3*x[i-1] - 3*x[i-2] + x[i-3])
+    /// Models constant acceleration (quadratic trend)
+    /// Best for: Signals with smooth curvature
+    /// Expected improvement: ~30% better compression vs Delta
+    LPC3 = 0x02,
+    
+    /// Reserved for future use (e.g., adaptive predictor selection)
+    Reserved = 0x03,
+}
+
+impl PredictorMode {
+    /// Convert u8 to PredictorMode
+    pub const fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(PredictorMode::Delta),
+            0x01 => Some(PredictorMode::LPC2),
+            0x02 => Some(PredictorMode::LPC3),
+            0x03 => Some(PredictorMode::Reserved),
+            _ => None,
+        }
+    }
+}
+
 /// Core compression strategy trait
 ///
 /// Implementors provide compression and decompression logic with compile-time
@@ -77,17 +117,24 @@ pub trait CompressionStrategy {
 /// Packet header structure (8 bytes)
 ///
 /// ```text
-/// ┌──────────┬──────────┬──────────────────┬────────────────────┐
-/// │ Magic    │ Version  │ Channel Count    │ Strategy | Rice k │
-/// │ (4 bytes)│ (1 byte) │ (2 bytes BE)     │ (1 byte)           │
-/// └──────────┴──────────┴──────────────────┴────────────────────┘
+/// ┌──────────┬──────────┬──────────────────┬─────────────────────────────────┐
+/// │ Magic    │ Version  │ Channel Count    │ Strategy|Predictor|Rice k      │
+/// │ (4 bytes)│ (1 byte) │ (2 bytes BE)     │ (1 byte: 4|2|2 bits)            │
+/// └──────────┴──────────┴──────────────────┴─────────────────────────────────┘
 /// ```
+///
+/// Byte 7 layout:
+/// - Bits [7:4]: Strategy ID (4 bits, up to 16 strategies)
+/// - Bits [3:2]: Predictor Mode (2 bits: Delta/LPC2/LPC3/Reserved)
+/// - Bits [1:0]: Rice parameter k (2 bits: 0-3)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketHeader {
     /// Number of channels in this packet
     pub channel_count: u16,
     /// Compression strategy used
     pub strategy_id: StrategyId,
+    /// Predictor mode for residual computation
+    pub predictor: PredictorMode,
     /// Rice parameter k (0-3), only used for Rice strategy
     pub rice_k: u8,
 }
@@ -97,10 +144,16 @@ impl PacketHeader {
     pub const SIZE: usize = 8;
 
     /// Create new header
-    pub const fn new(channel_count: u16, strategy_id: StrategyId, rice_k: u8) -> Self {
+    pub const fn new(
+        channel_count: u16,
+        strategy_id: StrategyId,
+        predictor: PredictorMode,
+        rice_k: u8,
+    ) -> Self {
         Self {
             channel_count,
             strategy_id,
+            predictor,
             rice_k,
         }
     }
@@ -126,8 +179,10 @@ impl PacketHeader {
         buffer[5] = (self.channel_count >> 8) as u8;
         buffer[6] = (self.channel_count & 0xFF) as u8;
 
-        // Strategy ID (6 bits) | Rice k (2 bits)
-        let strategy_byte = ((self.strategy_id as u8) << 2) | (self.rice_k & 0x03);
+        // Byte 7: Strategy (4 bits) | Predictor (2 bits) | Rice k (2 bits)
+        let strategy_byte = ((self.strategy_id as u8) << 4)
+            | ((self.predictor as u8) << 2)
+            | (self.rice_k & 0x03);
         buffer[7] = strategy_byte;
 
         Ok(())
@@ -153,19 +208,23 @@ impl PacketHeader {
         // Parse channel count (big-endian u16)
         let channel_count = ((buffer[5] as u16) << 8) | (buffer[6] as u16);
 
-        // Parse strategy byte
-        let strategy_byte = buffer[7];
-        let strategy_id_raw = strategy_byte >> 2;
-        let rice_k = strategy_byte & 0x03;
+        // Parse byte 7
+        let config_byte = buffer[7];
+        let strategy_id_raw = (config_byte >> 4) & 0x0F;
+        let predictor_raw = (config_byte >> 2) & 0x03;
+        let rice_k = config_byte & 0x03;
 
         let strategy_id =
             StrategyId::from_u8(strategy_id_raw).ok_or(CodecError::InvalidStrategy {
                 strategy_id: strategy_id_raw,
             })?;
 
+        let predictor = PredictorMode::from_u8(predictor_raw).ok_or(CodecError::CorruptedHeader)?;
+
         Ok(Self {
             channel_count,
             strategy_id,
+            predictor,
             rice_k,
         })
     }
@@ -177,7 +236,7 @@ mod tests {
 
     #[test]
     fn test_packet_header_roundtrip() {
-        let header = PacketHeader::new(1024, StrategyId::DeltaVarint, 0);
+        let header = PacketHeader::new(1024, StrategyId::DeltaVarint, PredictorMode::Delta, 0);
         let mut buffer = [0u8; 8];
 
         header.write(&mut buffer).unwrap();
@@ -185,12 +244,13 @@ mod tests {
 
         assert_eq!(decoded.channel_count, 1024);
         assert_eq!(decoded.strategy_id, StrategyId::DeltaVarint);
+        assert_eq!(decoded.predictor, PredictorMode::Delta);
         assert_eq!(decoded.rice_k, 0);
     }
 
     #[test]
     fn test_packet_header_with_rice() {
-        let header = PacketHeader::new(512, StrategyId::Rice, 3);
+        let header = PacketHeader::new(512, StrategyId::Rice, PredictorMode::Delta, 3);
         let mut buffer = [0u8; 8];
 
         header.write(&mut buffer).unwrap();
@@ -198,7 +258,36 @@ mod tests {
 
         assert_eq!(decoded.channel_count, 512);
         assert_eq!(decoded.strategy_id, StrategyId::Rice);
+        assert_eq!(decoded.predictor, PredictorMode::Delta);
         assert_eq!(decoded.rice_k, 3);
+    }
+
+    #[test]
+    fn test_packet_header_with_lpc2() {
+        let header = PacketHeader::new(256, StrategyId::Rice, PredictorMode::LPC2, 2);
+        let mut buffer = [0u8; 8];
+
+        header.write(&mut buffer).unwrap();
+        let decoded = PacketHeader::read(&buffer).unwrap();
+
+        assert_eq!(decoded.channel_count, 256);
+        assert_eq!(decoded.strategy_id, StrategyId::Rice);
+        assert_eq!(decoded.predictor, PredictorMode::LPC2);
+        assert_eq!(decoded.rice_k, 2);
+    }
+
+    #[test]
+    fn test_packet_header_with_lpc3() {
+        let header = PacketHeader::new(128, StrategyId::Rice, PredictorMode::LPC3, 1);
+        let mut buffer = [0u8; 8];
+
+        header.write(&mut buffer).unwrap();
+        let decoded = PacketHeader::read(&buffer).unwrap();
+
+        assert_eq!(decoded.channel_count, 128);
+        assert_eq!(decoded.strategy_id, StrategyId::Rice);
+        assert_eq!(decoded.predictor, PredictorMode::LPC3);
+        assert_eq!(decoded.rice_k, 1);
     }
 
     #[test]
@@ -227,7 +316,7 @@ mod tests {
         buffer[4] = PROTOCOL_VERSION;
         buffer[5] = 0;
         buffer[6] = 64; // 64 channels
-        buffer[7] = 0xFF; // Invalid strategy (top 6 bits)
+        buffer[7] = 0xFF; // Invalid strategy (top 4 bits = 15)
 
         let result = PacketHeader::read(&buffer);
         assert!(matches!(result, Err(CodecError::InvalidStrategy { .. })));
@@ -235,10 +324,26 @@ mod tests {
 
     #[test]
     fn test_buffer_too_small() {
-        let header = PacketHeader::new(128, StrategyId::DeltaVarint, 0);
+        let header = PacketHeader::new(128, StrategyId::DeltaVarint, PredictorMode::Delta, 0);
         let mut buffer = [0u8; 4]; // Too small
 
         let result = header.write(&mut buffer);
         assert!(matches!(result, Err(CodecError::BufferTooSmall { .. })));
+    }
+
+    #[test]
+    fn test_predictor_mode_encoding() {
+        // Test all predictor modes encode/decode correctly
+        for predictor in [
+            PredictorMode::Delta,
+            PredictorMode::LPC2,
+            PredictorMode::LPC3,
+        ] {
+            let header = PacketHeader::new(100, StrategyId::Rice, predictor, 2);
+            let mut buffer = [0u8; 8];
+            header.write(&mut buffer).unwrap();
+            let decoded = PacketHeader::read(&buffer).unwrap();
+            assert_eq!(decoded.predictor, predictor);
+        }
     }
 }

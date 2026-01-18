@@ -54,7 +54,7 @@ mod varint;
 
 // Re-export commonly used types
 pub use error::{CodecError, CodecResult};
-pub use strategy::{CompressionStrategy, PacketHeader, StrategyId};
+pub use strategy::{CompressionStrategy, PacketHeader, PredictorMode, StrategyId};
 
 use buffer::NeuralFrame;
 use simd::{compute_deltas, reconstruct_from_deltas};
@@ -95,7 +95,12 @@ pub fn compress_spike_counts(
     let channel_count = frame.channel_count_u16()?;
 
     // Write packet header
-    let header = PacketHeader::new(channel_count, StrategyId::DeltaVarint, 0);
+    let header = PacketHeader::new(
+        channel_count,
+        StrategyId::DeltaVarint,
+        PredictorMode::Delta,
+        0,
+    );
     header.write(output)?;
 
     let payload_start = PacketHeader::SIZE;
@@ -227,7 +232,7 @@ pub fn compress_voltage(
     )?;
 
     // Write header with selected k
-    let header = PacketHeader::new(channel_count, StrategyId::Rice, k);
+    let header = PacketHeader::new(channel_count, StrategyId::Rice, PredictorMode::Delta, k);
     header.write(output)?;
 
     Ok(PacketHeader::SIZE + payload_size)
@@ -338,7 +343,7 @@ pub fn compress_packed4(
     compute_deltas(input, &mut workspace[..input.len()]);
 
     // Write packet header
-    let header = PacketHeader::new(channel_count, StrategyId::Packed4, 0);
+    let header = PacketHeader::new(channel_count, StrategyId::Packed4, PredictorMode::Delta, 0);
     header.write(output)?;
 
     let payload_start = PacketHeader::SIZE;
@@ -468,7 +473,12 @@ pub fn compress_fixed_width(
     compute_deltas(input, &mut workspace[..input.len()]);
 
     // Write packet header
-    let header = PacketHeader::new(channel_count, StrategyId::FixedWidth, 0);
+    let header = PacketHeader::new(
+        channel_count,
+        StrategyId::FixedWidth,
+        PredictorMode::Delta,
+        0,
+    );
     header.write(output)?;
 
     let payload_start = PacketHeader::SIZE;
