@@ -1,0 +1,49 @@
+[package]
+name = "phantomcodec"
+version = "0.1.0"
+edition = "2026"
+authors = ["Phantom Team <youssef@elabbassi.com>"]
+license = "MIT"
+description = "Real-time lossless compression for high-density neural data (1,024+ channels)"
+repository = "https://github.com/yelabb/PhantomCodec"
+keywords = ["neural", "compression", "embedded", "no_std", "bci"]
+categories = ["compression", "embedded", "no-std", "science"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest = { version = "1.4", default-features = false, features = ["alloc"] }
+
+[features]
+default = ["std"]
+std = []
+simd = []
+cortex-m-dsp = ["dep:cortex-m"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+inherits = "release"
+debug = true
+
+[[example]]
+name = "stm32_dma_demo"
+required-features = ["cortex-m-dsp"]
+
+[[bench]]
+name = "compression_benchmark"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies.cortex-m]
+version = "0.7"
+optional = true
+default-features = false
