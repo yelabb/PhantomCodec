@@ -117,12 +117,41 @@ fn bench_compression_ratio(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark worst-case scenario: dense neural activity (pathological case)
+/// Benchmark worst-case scenario: high-entropy random data (true worst case)
 fn bench_dense_data(c: &mut Criterion) {
-    let mut group = c.benchmark_group("dense_activity");
+    let mut group = c.benchmark_group("worst_case");
     
     let num_channels = 1024;
-    let mut spike_counts = vec![12i32; num_channels]; // All channels firing
+    
+    // PCG random number generator (deterministic, high quality)
+    struct Pcg32 {
+        state: u64,
+        inc: u64,
+    }
+    
+    impl Pcg32 {
+        fn new(seed: u64) -> Self {
+            Self {
+                state: seed,
+                inc: 1,
+            }
+        }
+        
+        fn next(&mut self) -> u32 {
+            let oldstate = self.state;
+            self.state = oldstate.wrapping_mul(6364136223846793005).wrapping_add(self.inc);
+            let xorshifted = (((oldstate >> 18) ^ oldstate) >> 27) as u32;
+            let rot = (oldstate >> 59) as u32;
+            xorshifted.rotate_right(rot)
+        }
+    }
+    
+    // Generate high-entropy random spike counts (0-15 range)
+    let mut rng = Pcg32::new(42);
+    let mut spike_counts = vec![0i32; num_channels];
+    for i in 0..num_channels {
+        spike_counts[i] = (rng.next() % 16) as i32; // Random 0-15
+    }
     
     let mut compressed = vec![0u8; num_channels * 8];
     let mut workspace = vec![0i32; num_channels];
@@ -136,10 +165,10 @@ fn bench_dense_data(c: &mut Criterion) {
     )
     .unwrap();
     
-    println!("Dense data compression: {:.1}%", 
+    println!("Worst-case (random data) compression: {:.1}%", 
         (compressed_size as f64 / (num_channels * 4) as f64) * 100.0);
     
-    group.bench_function("decompress_dense", |b| {
+    group.bench_function("decompress_worst_case", |b| {
         b.iter(|| {
             decompress_spike_counts(
                 black_box(&compressed[..compressed_size]),

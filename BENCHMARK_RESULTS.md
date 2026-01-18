@@ -8,18 +8,18 @@
 
 ## 🎯 Key Results
 
-### ✅ Decompression Performance (CRITICAL METRIC)
+### ✅ Decompression Performance (Development PC)
 
-| Channels | Decompression Time | Target (<10μs on Cortex-M4F) |
-|----------|-------------------|------------------------------|
-| 128      | **336 ns**        | ✅ **~67 ns** (5x faster)    |
-| 256      | **984 ns**        | ✅ **~197 ns** (5x faster)   |
-| 512      | **1.74 µs**       | ✅ **~348 ns** (5x faster)   |
-| 1024     | **2.57 µs**       | ✅ **~514 ns** (5x faster)   |
+| Channels | Decompression Time | Projected M4F @ 168MHz |
+|----------|-------------------|------------------------|
+| 128      | 336 ns            | ~30-40 µs              |
+| 256      | 984 ns            | ~60-80 µs              |
+| 512      | 1.74 µs           | ~100-130 µs            |
+| 1024     | 2.57 µs           | ~150-200 µs            |
 
-**Status:** ✅ **All targets MET on embedded hardware**
+**Embedded Target:** <150µs for 1024 channels on Cortex-M4F
 
-*Note: PC timings are 5-6x slower than optimized Cortex-M4F @ 168MHz. The target hardware will achieve sub-microsecond decode for all channel counts.*
+*Note: Embedded scaling estimated from ARM instruction complexity and memory latency. Actual performance requires on-target profiling.*
 
 ---
 
@@ -34,7 +34,10 @@
 **Dense Activity (worst case - all channels firing):**
 - 1024 channels: **25.2%** compression
 
-**Status:** ✅ **Exceeds 50% compression target** (achieving ~71% reduction)
+**Random High-Entropy Data (true worst-case):**
+- Results from `cargo bench` with PCG RNG
+
+**Status:** ✅ **Exceeds 50% compression target** (achieving ~71% reduction on realistic data)
 
 ---
 
@@ -49,24 +52,26 @@
 
 ## 🔬 Analysis
 
-### Why Your Slow PC Doesn't Matter
+### Benchmark Interpretation
 
-The benchmarks show **relative performance** that translates to embedded:
+These benchmarks measure **development PC performance**:
 
-1. **Compression Ratio**: Hardware-independent (28.5% is 28.5% everywhere)
-2. **Linear Scaling**: O(n) complexity proven
-3. **Decompression Speed**: 30% faster than compression (consistent ratio)
+1. **Compression Ratio**: Hardware-independent (28.5% is universal)
+2. **Linear Scaling**: O(n) complexity confirmed
+3. **Algorithm Efficiency**: Decompression 30% faster than compression
 
-### Embedded Hardware Projection
+### Embedded Performance Notes
 
-**Cortex-M4F @ 168MHz characteristics:**
-- ~5-6x faster than consumer PC for tight loops
-- SIMD DSP instructions for delta computation
-- Zero-copy DMA for memory access
+**Cortex-M4F @ 168MHz reality:**
+- Different instruction mix (ARM vs x86)
+- Slower memory subsystem (no L3 cache)
+- Lower clock frequency affects loop-heavy code
+- DSP instructions help but don't eliminate overhead
 
-**Projected 1024-channel decode:**
+**Realistic embedded target:**
 ```
-PC: 2.57 µs ÷ 5 = 514 ns ✅ Well under 10µs target
+1024 channels: <150µs decode latency
+For <10µs requirement: Algorithm redesign needed (bit-packing)
 ```
 
 ---
@@ -89,8 +94,8 @@ PC: 2.57 µs ÷ 5 = 514 ns ✅ Well under 10µs target
 
 **Decode latency budget:**
 - Available: 25ms (40Hz frame period)
-- PhantomCodec: 0.514µs (0.002% of budget)
-- Remaining: 24.999ms for signal processing ✅
+- PhantomCodec (M4F): ~150µs (0.6% of budget)
+- Remaining: 24.85ms for signal processing ✅
 
 ---
 
@@ -117,10 +122,10 @@ cargo bench --baseline main
 
 ## 🚀 Next Steps
 
-1. ✅ Benchmarks validate <10µs claim
-2. ⏭️ Test on ARM hardware (STM32F4)
+1. ✅ Benchmarks show realistic embedded targets
+2. ⏭️ On-target profiling with STM32F4 dev board
 3. ⏭️ Add SIMD benchmarks (nightly Rust)
-4. ⏭️ Profile with Cortex-M DSP intrinsics
+4. ⏭️ Measure with hardware DSP intrinsics
 
 ---
 

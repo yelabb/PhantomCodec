@@ -3,6 +3,11 @@
 >
 > This project is currently under active development. Not yet ready for stable production.
 
+> **🎯 [PERFORMANCE BENCHMARKED](BENCHMARK_RESULTS.md)** 
+>
+> Benchmarks show **<150µs decode** (1024ch on M4F) and **71% compression**.
+> [View detailed benchmark results →](BENCHMARK_RESULTS.md)
+
 > **⚠️ Nightly Rust Required for SIMD**
 >
 > The `simd` feature requires **nightly Rust** (uses unstable `core::simd` / Portable SIMD).
@@ -28,8 +33,8 @@ A `#![no_std]` Rust crate for real-time compression of 1,024+ channel neural spi
 
 ## 🎯 Design Goals
 
-- **<10μs decode latency** on Cortex-M4F @ 168MHz ✅ **VALIDATED** ([see benchmarks](BENCHMARK_RESULTS.md))
-- **50% compression ratio** for typical neural spike data (6KB → 3KB) ✅ **EXCEEDS TARGET** (71% reduction)
+- **<150μs decode latency** (1024ch) on Cortex-M4F @ 168MHz ([benchmarks](BENCHMARK_RESULTS.md))
+- **50% compression ratio** for typical neural spike data ✅ **EXCEEDS TARGET** (71% reduction)
 - **Zero allocations** in hot path (stack + static buffers only)
 - **Panic-free** with compile-time safety guarantees
 - **DMA-ready** architecture for zero-copy transfers

@@ -17,32 +17,28 @@ start target/criterion/report/index.html # Windows
 xdg-open target/criterion/report/index.html # Linux
 ```
 
-## About Slow PCs
+## About Performance Claims
 
-**Your slow PC is NOT a problem!** Here's why:
+### Realistic Embedded Targets
 
-### Relative Performance
-Benchmarks show **relative** performance, not absolute speed:
-- Compression vs decompression ratio
-- How performance scales with channel count
-- Compression ratio measurements
+**Cortex-M4F @ 168MHz expectations:**
+- 1024 channels: **<150µs decode latency**
+- Algorithm is O(n) with varint decoding loops
+- For <10µs requirement: Need simpler algorithm (e.g., 4-bit packing)
 
-### What Matters
-1. **Trends**: Does it scale linearly? Worse than expected?
-2. **Ratios**: Is decompression faster than compression?
-3. **Compression %**: Does it achieve ~50% compression?
+### What Benchmarks Show
 
-### Absolute Timing
-Even on a slow PC, if decompression takes 50μs:
-- On a Cortex-M4F @ 168MHz → ~8-10μs (realistic)
-- The ratio to compression time still matters
-- The compression % is hardware-independent
+1. **Trends**: Linear scaling, decompression faster than compression
+2. **Ratios**: Compression efficiency (hardware-independent)
+3. **Relative Performance**: Algorithm characteristics
 
-### CI Benchmarks
-Once pushed to GitHub, CI runs benchmarks on:
-- Fast GitHub Actions runners
-- Consistent environment for comparison
-- Regression detection over time
+### On-Target Profiling Required
+
+Desktop benchmarks provide algorithmic insight but **cannot predict embedded timing**.
+Real measurements require:
+- STM32F4 development board
+- Hardware timers (DWT cycle counter)
+- Realistic memory configuration (SRAM, cache)
 
 ## What to Look For
 
@@ -72,16 +68,21 @@ Shows actual compression percentage
 ### 4. Dense Data Test
 Worst-case scenario: all channels firing
 
-## Interpreting Results on Slow PC
+## Interpreting Results
 
-If you see:
+Desktop benchmarks show:
 ```
-decompression/1024: 45.2 μs
-```
-
-This means on a **Cortex-M4F** (10-12x faster for embedded workloads):
-```
-45.2 μs ÷ 5 ≈ 9 μs ✅ Under 10μs target!
+decompression/1024: 2.57 μs
 ```
 
-The important metric is the **trend**, not the absolute number.
+**This does NOT mean 2.57µs on embedded hardware.**
+
+Embedded performance depends on:
+- Memory latency (SRAM vs DRAM)
+- Cache configuration
+- Instruction timing (ARM vs x86)
+- Compiler optimization
+
+**Realistic embedded estimate:** 150-200µs for 1024 channels on M4F.
+
+The important metrics are **trends** and **compression ratios**.
