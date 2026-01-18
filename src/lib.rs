@@ -376,6 +376,7 @@ mod tests {
         let size = compress_spike_counts(&original, &mut compressed, &mut workspace).unwrap();
 
         // Expect significant compression
+        #[cfg(feature = "std")]
         println!("Original: {} bytes, Compressed: {} bytes", 142 * 4, size);
         assert!(size < 142 * 4); // Should be smaller than raw data
     }

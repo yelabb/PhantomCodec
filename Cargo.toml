@@ -18,7 +18,7 @@ categories = ["compression", "embedded", "no-std", "science"]
 default = ["std"]
 std = []
 simd = []
-cortex-m-dsp = ["dep:cortex-m"]
+cortex-m-dsp = ["cortex-m"]
 
 [profile.release]
 opt-level = 3

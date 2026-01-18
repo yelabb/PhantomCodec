@@ -322,7 +322,7 @@ fn setup_uart_dma() {
 // Panic Handler (Required for no_std)
 // ============================================================================
 
-#[cfg(not(test))]
+#[cfg(all(not(test), not(feature = \"std\")))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // In production: log via semihosting, then reset

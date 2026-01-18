@@ -197,6 +197,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_error_display() {
         let err = CodecError::BufferTooSmall { required: 2048 };
         let display = format!("{}", err);

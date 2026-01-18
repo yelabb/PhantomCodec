@@ -315,8 +315,13 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "std")]
     fn test_large_dataset() {
         // Test with realistic neural data size
+        extern crate alloc;
+        use alloc::vec;
+        use alloc::vec::Vec;
+        
         let input: Vec<i32> = (0..1024).map(|i| (i % 10) as i32).collect();
         let mut deltas = vec![0; 1024];
         let mut reconstructed = vec![0; 1024];

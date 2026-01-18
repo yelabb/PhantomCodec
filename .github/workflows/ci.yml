@@ -231,16 +231,16 @@ jobs:
         continue-on-error: true
 
   check-msrv:
-    name: Check MSRV (1.56.0)
+    name: Check MSRV (1.60.0)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust 1.56.0
+      - name: Install Rust 1.60.0
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.56.0
+          toolchain: 1.60.0
 
       - name: Check compilation
         run: cargo check --all-features
