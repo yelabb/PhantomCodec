@@ -76,8 +76,9 @@ impl<'a> BitWriter<'a> {
     }
 
     /// Get number of complete bytes written
+    #[allow(clippy::manual_div_ceil)] // div_ceil is unstable, need stable Rust support
     pub fn bytes_written(&self) -> usize {
-        self.bit_pos.div_ceil(8)
+        (self.bit_pos + 7) / 8
     }
 
     /// Get buffer capacity in bits
@@ -133,8 +134,9 @@ impl<'a> BitWriter<'a> {
         }
 
         if self.remaining_bits() < width as usize {
+            #[allow(clippy::manual_div_ceil)] // div_ceil is unstable, need stable Rust support
             return Err(CodecError::BufferTooSmall {
-                required: self.bytes_written() + (width as usize).div_ceil(8),
+                required: self.bytes_written() + ((width as usize) + 7) / 8,
             });
         }
 

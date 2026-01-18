@@ -127,11 +127,9 @@ jobs:
       - name: Build for ${{ matrix.target }} (no_std)
         run: cargo build --target ${{ matrix.target }} --no-default-features --release --verbose
 
-      - name: Check size
-        run: |
-          cargo install cargo-binutils
-          rustup component add llvm-tools-preview
-          cargo size --target ${{ matrix.target }} --no-default-features --release
+      # Note: cargo-size requires a binary target, not just a library
+      # Size information is not relevant for library crates
+      # If you add examples or binaries later, you can check their size individually
 
   benchmarks:
     name: Benchmarks
