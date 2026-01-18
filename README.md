@@ -3,6 +3,19 @@
 >
 > This project is currently under active development. Not yet ready for stable production.
 
+> **⚠️ Nightly Rust Required for SIMD**
+>
+> The `simd` feature requires **nightly Rust** (uses unstable `core::simd` / Portable SIMD).
+> Without the `simd` feature, the crate compiles on stable Rust but falls back to scalar implementations.
+>
+> ```bash
+> # Stable Rust (scalar only)
+> cargo build
+>
+> # Nightly Rust (SIMD-accelerated)
+> rustup default nightly
+> cargo build --features simd
+> ```
 
 > **Real-time lossless compression for high-density neural data**
 
@@ -20,7 +33,7 @@ A `#![no_std]` Rust crate for real-time compression of 1,024+ channel neural spi
 - **Zero allocations** in hot path (stack + static buffers only)
 - **Panic-free** with compile-time safety guarantees
 - **DMA-ready** architecture for zero-copy transfers
-- **Portable SIMD** with ARM DSP intrinsics fallback
+- **Portable SIMD** (nightly Rust) with scalar fallback (stable Rust)
 
 ---
 
@@ -101,6 +114,8 @@ let k = if sum_abs_deltas > 48 { 3 } else { 1 };
 ```
 
 **Rationale**: Neural firing rates change dramatically (bursts vs. silence). A fixed `k` is inefficient half the time. Full histogram analysis is too slow (~2μs). This heuristic adds ~50ns overhead while yielding **15% better compression** during high-activity periods.
+
+**Safety Note**: Rice coding has inherent limits. If a value exceeds `(255 << k)`, the codec returns `RiceQuotientOverflow` error rather than silently corrupting data. This ensures the codec remains truly lossless - it will fail loudly rather than producing incorrect output. In practice, this limit is rarely hit with typical neural data (max safe value: 255 with k=0, 2040 with k=3).
 
 ---
 
@@ -410,7 +425,8 @@ PhantomCodec is designed to slot into the existing data pipeline:
 - [x] Adaptive Rice coding
 - [x] Zero-copy buffer system
 - [x] BitWriter abstraction
-- [x] ARM DSP intrinsics (Cortex-M4F)
+- [x] Portable SIMD (nightly Rust, x86/ARM64)
+- [ ] ARM DSP intrinsics (Cortex-M4F) - claimed but not implemented
 - [ ] Helium (MVE) support (Cortex-M55/M85)
 - [ ] C FFI bindings
 - [ ] Python PyO3 bindings

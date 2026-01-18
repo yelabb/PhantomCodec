@@ -3,6 +3,11 @@
 //! A `#![no_std]` compatible crate for compressing 1,024+ channel neural spike data
 //! with <10μs decode latency and zero allocations in the hot path.
 //!
+//! # Compiler Requirements
+//!
+//! - **Stable Rust**: Works with scalar fallback (no `simd` feature)
+//! - **Nightly Rust**: Required for `simd` feature (uses unstable `core::simd`)
+//!
 //! # Example
 //! ```
 //! use phantomcodec::{compress_spike_counts, decompress_spike_counts};
@@ -30,6 +35,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(all(feature = "simd", target_feature = "simd128"), feature(portable_simd))]
 #![warn(missing_docs)]
 
 pub mod bitwriter;

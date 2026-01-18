@@ -176,6 +176,7 @@ mod tests {
             CodecError::UnexpectedEndOfInput,
             CodecError::InvalidZigZagValue,
             CodecError::InvalidRiceParameter { k: 7 },
+            CodecError::RiceQuotientOverflow { value: 5000, k: 1 },
             CodecError::BitPositionOverflow,
         ];
 
@@ -208,5 +209,10 @@ mod tests {
         let display = format!("{}", err);
         assert!(display.contains("1024"));
         assert!(display.contains("512"));
+
+        let err = CodecError::RiceQuotientOverflow { value: 5000, k: 1 };
+        let display = format!("{}", err);
+        assert!(display.contains("5000"));
+        assert!(display.contains("k=1"));
     }
 }

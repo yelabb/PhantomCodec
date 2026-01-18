@@ -1,11 +1,14 @@
 //! SIMD-accelerated operations for neural data processing
 //!
 //! Provides portable SIMD implementations with fallback to scalar code.
-//! Supports:
-//! - Portable SIMD (core::simd) for host targets
-//! - ARM DSP intrinsics (SADD16, SSUB16) for Cortex-M4F
-//! - Helium (MVE) for Cortex-M55/M85 (future)
-//! - Scalar fallback for basic Cortex-M0/M3
+//!
+//! **Requires nightly Rust** for SIMD features (unstable `core::simd`).
+//!
+//! Current support:
+//! - ✅ Portable SIMD (core::simd) for host targets (nightly Rust)
+//! - ✅ Scalar fallback (works on stable Rust and all targets)
+//! - ❌ ARM DSP intrinsics (SADD16, SSUB16) - NOT YET IMPLEMENTED
+//! - ❌ Helium (MVE) for Cortex-M55/M85 - planned for future
 
 /// Calculate deltas between consecutive samples: delta[i] = input[i] - input[i-1]
 ///
@@ -54,7 +57,7 @@ fn compute_deltas_scalar(input: &[i32], output: &mut [i32], mut prev: i32) {
 /// SIMD implementation using portable SIMD (8-wide i32 lanes)
 #[cfg(all(feature = "simd", target_feature = "simd128"))]
 fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
-    use core::simd::{i32x8, Simd};
+    use core::simd::{i32x8, Simd, simd_swizzle};
 
     const LANES: usize = 8;
     let len = input.len();
@@ -66,10 +69,18 @@ fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
     while i < simd_end {
         let chunk = Simd::<i32, 8>::from_slice(&input[i..i + LANES]);
         
-        // Create vector with [prev, input[i], input[i+1], ..., input[i+6]]
-        let mut shifted = [prev; LANES];
-        shifted[1..].copy_from_slice(&input[i..i + LANES - 1]);
-        let prev_vec = Simd::<i32, 8>::from_array(shifted);
+        // Create previous vector: [prev, chunk[0], chunk[1], ..., chunk[6]]
+        // Use SIMD shuffle (rotate_elements_right) instead of memory copy
+        let prev_vec = simd_swizzle!(Simd::from([prev, 0, 0, 0, 0, 0, 0, 0]), chunk, [
+            First(0),  // prev
+            Second(0), // chunk[0]
+            Second(1), // chunk[1]
+            Second(2), // chunk[2]
+            Second(3), // chunk[3]
+            Second(4), // chunk[4]
+            Second(5), // chunk[5]
+            Second(6), // chunk[6]
+        ]);
         
         // Compute deltas: current - previous
         let deltas = chunk - prev_vec;
@@ -222,16 +233,23 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
     total
 }
 
-// ARM Cortex-M DSP intrinsics (for future optimization)
+// ARM Cortex-M DSP intrinsics (NOT YET IMPLEMENTED)
 #[cfg(feature = "cortex-m-dsp")]
 mod cortex_m_dsp {
-    // Note: These are placeholder stubs. Actual implementation would use
-    // cortex-m crate's DSP intrinsics when available.
+    // ⚠️ WARNING: This module is currently EMPTY
     //
-    // Example: __SSUB16 performs two 16-bit subtractions in parallel
-    // packed into a single 32-bit register (Q15 format).
+    // Despite earlier claims in documentation, ARM DSP intrinsics (SADD16, SSUB16)
+    // for Cortex-M4F are not yet implemented. Code currently falls back to scalar
+    // operations on Cortex-M targets.
     //
-    // For now, we fall back to scalar or portable SIMD.
+    // To implement (future work):
+    // 1. Use cortex-m crate's DSP intrinsics (__SSUB16 for dual 16-bit subtraction)
+    // 2. Convert i32 to Q15 format (pack two samples into one u32 register)
+    // 3. Perform parallel operations using SIMD instructions
+    // 4. Unpack results back to i32
+    //
+    // Expected speedup: 1.5-2x for Cortex-M4F over scalar code
+    // Until then: Use portable SIMD on host targets, or scalar fallback on embedded
 }
 
 #[cfg(test)]
