@@ -29,7 +29,7 @@
 //! - Lossy quantization (±128) acceptable for spike detection
 //! - Pure bit-shifting operations, no entropy coding overhead
 
-/// Calculate deltas between consecutive samples: delta[i] = input[i] - input[i-1]
+/// Calculate deltas between consecutive samples: delta\[i\] = input\[i\] - input\[i-1\]
 ///
 /// First element is preserved as-is (no previous value to delta against).
 /// Uses SIMD acceleration when available.
@@ -122,7 +122,7 @@ fn compute_deltas_simd(input: &[i32], output: &mut [i32], mut prev: i32) {
     compute_deltas_scalar(&input[i..], &mut output[i..], prev);
 }
 
-/// Reconstruct original values from deltas: output[i] = output[i-1] + delta[i]
+/// Reconstruct original values from deltas: output\[i\] = output\[i-1\] + delta\[i\]
 ///
 /// First element is preserved as-is (it's the initial value, not a delta).
 ///
@@ -203,7 +203,7 @@ fn reconstruct_from_deltas_simd(deltas: &[i32], output: &mut [i32], mut prev: i3
 
 /// Calculate sum of absolute deltas for adaptive Rice parameter selection
 ///
-/// Returns the sum of |delta[i]| for the first `n` samples (or all if n > len).
+/// Returns the sum of |delta\[i\]| for the first `n` samples (or all if n > len).
 /// This heuristic is used to choose Rice parameter k:
 /// - High sum → high activity → use k=3
 /// - Low sum → low activity → use k=1
@@ -283,6 +283,8 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
 /// All functions have fallback implementations for non-ARM targets.
 #[cfg(feature = "cortex-m-dsp")]
 pub mod cortex_m_dsp {
+    use crate::error::{CodecError, CodecResult};
+    
     #[cfg(target_arch = "arm")]
     use core::arch::arm::{__qadd16, __qsub16, __sadd16, __ssub16, __usad8};
 
@@ -556,21 +558,16 @@ pub mod cortex_m_dsp {
         
         Ok(sample_count)
     }
-    
-    // Re-export for public API (these are pure Rust, work on all targets)
-    pub use self::{decode_fixed_4bit, encode_fixed_4bit};
 }
 
-// Re-export portable 4-bit encoding functions from cortex_m_dsp module
-// These are pure Rust implementations that work on all targets
+// Re-export DSP functions when feature is enabled
 #[cfg(feature = "cortex-m-dsp")]
-pub use cortex_m_dsp::{decode_fixed_4bit, encode_fixed_4bit};
+pub use cortex_m_dsp::{
+    compute_deltas_dsp, decode_fixed_4bit, encode_fixed_4bit, reconstruct_from_deltas_dsp,
+    sum_abs_deltas_dsp,
+};
 
-// If cortex-m-dsp is not enabled, we need to provide the functions at top level
-#[cfg(not(feature = "cortex-m-dsp"))]
-pub use self::portable::{decode_fixed_4bit, encode_fixed_4bit};
-
-// Portable implementations (available on all targets)
+// Portable implementations when cortex-m-dsp is not enabled
 #[cfg(not(feature = "cortex-m-dsp"))]
 mod portable {
     use crate::error::{CodecError, CodecResult};
@@ -631,11 +628,9 @@ mod portable {
     }
 }
 
-// Re-export DSP functions when feature is enabled
-#[cfg(feature = "cortex-m-dsp")]
-pub use cortex_m_dsp::{
-    compute_deltas_dsp, reconstruct_from_deltas_dsp, sum_abs_deltas_dsp,
-};
+// Re-export portable functions when cortex-m-dsp is not enabled
+#[cfg(not(feature = "cortex-m-dsp"))]
+pub use portable::{decode_fixed_4bit, encode_fixed_4bit};
 
 #[cfg(test)]
 mod tests {
