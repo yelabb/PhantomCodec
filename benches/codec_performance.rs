@@ -2,6 +2,9 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion, Benchmark
 use phantomcodec::{compress_spike_counts, decompress_spike_counts};
 use phantomcodec::simd::{compute_deltas, reconstruct_from_deltas, sum_abs_deltas};
 
+#[cfg(feature = "cortex-m-dsp")]
+use phantomcodec::simd::cortex_m_dsp::{encode_fixed_4bit, decode_fixed_4bit};
+
 /// Benchmark compression of neural spike data
 fn bench_compress(c: &mut Criterion) {
     let mut group = c.benchmark_group("compression");
@@ -238,7 +241,8 @@ fn bench_simd_deltas(c: &mut Criterion) {
 fn bench_fixed_4bit_encoding(c: &mut Criterion) {
     let mut group = c.benchmark_group("fixed_4bit");
     
-    // Simulate the 4-bit encode/decode logic (portable version for benchmarking)
+    // Use actual production implementations when cortex-m-dsp feature is enabled
+    #[cfg(not(feature = "cortex-m-dsp"))]
     fn encode_4bit(deltas: &[i32], output: &mut [u8]) {
         let pairs = deltas.len() / 2;
         for i in 0..pairs {
@@ -252,6 +256,7 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
         }
     }
 
+    #[cfg(not(feature = "cortex-m-dsp"))]
     fn decode_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) {
         let pairs = sample_count / 2;
         for i in 0..pairs {

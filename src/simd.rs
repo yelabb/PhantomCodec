@@ -271,6 +271,16 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
 //
 // Expected speedup: 1.5-2x over scalar code for Cortex-M4F @ 168MHz
 // Target latency: ~75µs for 1024 channels (Phase 1 of INSPIRATION.md roadmap)
+
+/// ARM Cortex-M DSP intrinsics module
+///
+/// Provides hardware-accelerated implementations using ARM DSP extension instructions
+/// (SSUB16, SADD16, QADD16, USAD8) for Cortex-M4F/M7 processors.
+///
+/// These functions achieve ~1.5-2x speedup over scalar code by processing 2 samples
+/// per instruction using dual 16-bit SIMD operations.
+///
+/// All functions have fallback implementations for non-ARM targets.
 #[cfg(feature = "cortex-m-dsp")]
 pub mod cortex_m_dsp {
     #[cfg(target_arch = "arm")]
@@ -495,7 +505,7 @@ pub mod cortex_m_dsp {
     /// - Speed: ~10µs for 1024 channels (13-17x faster)
     /// - Lossy: Quantization error ±128 (acceptable for spike detection)
     pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) {
-        let out_len = (deltas.len() + 1) / 2;
+        let out_len = deltas.len().div_ceil(2);
         assert!(output.len() >= out_len, "Output buffer too small");
 
         let pairs = deltas.len() / 2;
