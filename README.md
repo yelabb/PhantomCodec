@@ -68,15 +68,18 @@ let compressed_size = phantomcodec::compress_spike_counts(
 
 ---
 
-## 📊 Performance Characteristics
+## 📊 Performance Targets
 
-| Operation | Cortex-M4F @ 168MHz | Cortex-M7 @ 400MHz | Desktop (AVX2) |
-|-----------|---------------------|-------------------|----------------|
-| Encode (1024ch) | 5.2μs | 2.1μs | 0.8μs |
-| Decode (1024ch) | 3.1μs | 1.3μs | 0.5μs |
-| Compression Ratio | 52% | 52% | 52% |
+> **Note**: These are design targets, not measured benchmarks. Actual performance will be validated on hardware.
 
-*Tested on MC_Maze dataset (142 channels, 40Hz, 25ms bins)*
+| Operation | Target (Cortex-M4F @ 168MHz) | Goal |
+|-----------|------------------------------|------|
+| Encode (1024ch) | <10μs | Real-time compatible |
+| Decode (1024ch) | <10μs | Minimal decode latency |
+| Compression Ratio | 40-60% | Depends on data sparsity |
+
+**Status**: Code complete, benchmarking on real hardware pending.  
+**Expected use case**: 142-1024 channels @ 40Hz (25ms bins) on MC_Maze-type datasets
 
 ---
 
