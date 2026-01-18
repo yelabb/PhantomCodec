@@ -209,10 +209,14 @@ impl QosController {
     }
 
     /// Get bandwidth statistics
+    ///
+    /// Returns (average_size, estimated_bandwidth)
+    /// Note: Bandwidth estimation uses a default 1kHz sample rate.
+    /// For accurate estimation, use the bandwidth_monitor's estimate_bandwidth() with actual rate.
     pub fn bandwidth_stats(&self) -> (usize, u32) {
         (
             self.bandwidth_monitor.average_size(),
-            self.bandwidth_monitor.estimate_bandwidth(1000), // Assume 1kHz default
+            self.bandwidth_monitor.estimate_bandwidth(1000), // Default 1kHz
         )
     }
 
@@ -224,16 +228,18 @@ impl QosController {
     /// # Returns
     /// The selected quality level
     pub fn select_quality(&mut self, sample_rate_hz: u32) -> QualityLevel {
-        let buffer_ratio = (self.buffer_occupancy as f32) / (self.config.max_buffer_bytes as f32);
+        // Use integer arithmetic to avoid floating-point in no_std
+        let buffer_ratio_percent = (self.buffer_occupancy * 100) / self.config.max_buffer_bytes;
         let estimated_bw = self.bandwidth_monitor.estimate_bandwidth(sample_rate_hz);
 
-        // Check if we need to degrade quality
-        let should_degrade = buffer_ratio > 0.8 || estimated_bw > self.config.target_bandwidth;
+        // Check if we need to degrade quality (buffer > 80% OR bandwidth exceeded)
+        let should_degrade = buffer_ratio_percent > 80 || estimated_bw > self.config.target_bandwidth;
 
-        // Check if we can improve quality
-        let should_improve = buffer_ratio < 0.5 && estimated_bw < self.config.target_bandwidth;
+        // Check if we can improve quality (buffer < 50% AND bandwidth OK)
+        let should_improve = buffer_ratio_percent < 50 && estimated_bw < self.config.target_bandwidth;
 
         // Apply hysteresis to prevent oscillation
+        // Only degrade if we haven't reached minimum quality yet
         if should_degrade && self.current_quality < self.config.min_quality {
             self.hysteresis_counter += 1;
             if self.hysteresis_counter >= 3 {
@@ -300,12 +306,13 @@ pub struct QosStats {
 /// * `samples` - Input samples
 ///
 /// # Returns
-/// Estimated compressed size in bytes
+/// Estimated compressed size in bytes (assumes ~60% compression ratio for typical neural data)
 pub fn estimate_bandwidth(samples: &[i32]) -> usize {
     // Simple heuristic: estimate based on number of samples
     // Assume average compression ratio of ~60% for typical neural data
+    // Using integer arithmetic: 60% = 3/5
     let raw_size = samples.len() * core::mem::size_of::<i32>();
-    (raw_size as f32 * 0.6) as usize
+    (raw_size * 3) / 5
 }
 
 #[cfg(test)]

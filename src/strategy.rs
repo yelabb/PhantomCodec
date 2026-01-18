@@ -24,8 +24,6 @@ pub enum StrategyId {
     Packed4 = 0x02,
     /// Fixed-Width Block Packing (PFOR) - lossless, ultra-low-latency <10µs
     FixedWidth = 0x03,
-    /// QoS Adaptive (automatically selects best strategy)
-    QosAdaptive = 0x04,
 }
 
 impl StrategyId {
@@ -36,7 +34,6 @@ impl StrategyId {
             0x01 => Some(StrategyId::Rice),
             0x02 => Some(StrategyId::Packed4),
             0x03 => Some(StrategyId::FixedWidth),
-            0x04 => Some(StrategyId::QosAdaptive),
             _ => None,
         }
     }

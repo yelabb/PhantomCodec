@@ -659,17 +659,13 @@ pub fn decompress_adaptive(
     let header = PacketHeader::read(input)?;
 
     // Decompress based on strategy
+    // Note: compress_adaptive() writes the actual strategy ID (Rice, FixedWidth, etc.)
+    // to the packet header, not a "QosAdaptive" marker
     match header.strategy_id {
         StrategyId::DeltaVarint => decompress_spike_counts(input, output, workspace),
         StrategyId::Rice => decompress_voltage(input, output, workspace),
         StrategyId::Packed4 => decompress_packed4(input, output, workspace),
         StrategyId::FixedWidth => decompress_fixed_width(input, output, workspace),
-        StrategyId::QosAdaptive => {
-            // QosAdaptive is just a marker - actual strategy is one of the above
-            Err(CodecError::InvalidStrategy {
-                strategy_id: header.strategy_id as u8,
-            })
-        }
     }
 }
 
