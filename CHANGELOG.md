@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now requires caller to provide workspace buffer, ensuring each context uses separate memory
   - See README "Safety & Reentrancy" section for detailed explanation and best practices
 
+- **[CRITICAL]** Fixed `BitWriter` dirty buffer corruption bug
+  - `BitWriter::write_bits()` previously only set bits to 1 using `|=` but never cleared bits to 0
+  - When reusing buffers (common in embedded to save RAM), old data would corrupt new compressed streams
+  - Decompression would fail or produce garbage data
+  - Now properly clears each byte before writing first bit to it, ensuring clean writes regardless of buffer state
+  - Added tests: `test_dirty_buffer_reuse()` and `test_partial_byte_dirty_buffer()` to prevent regression
+
 ### Migration Guide
 ```rust
 // Old API (unsafe):

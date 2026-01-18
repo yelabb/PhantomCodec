@@ -343,6 +343,41 @@ let size = compress(&data, &mut output, &mut workspace)?;  // No hidden state
 - For interrupt-driven compression, use separate buffers or disable interrupts during compression
 - See [examples/stm32_dma_demo.rs](examples/stm32_dma_demo.rs) for production-ready patterns
 
+### Buffer Reuse Safety
+
+PhantomCodec is designed for embedded systems where buffer reuse is essential to conserve RAM:
+
+**Automatic Buffer Cleaning:**
+- `BitWriter` automatically clears each byte before writing the first bit to it
+- Safe to reuse output buffers without manually zeroing them
+- No risk of old data corrupting new compressed streams
+
+**Example:**
+```rust
+// Reuse buffer across multiple compression cycles
+let mut output_buffer = [0u8; 4096];
+let mut workspace = [0i32; 1024];
+
+loop {
+    // Get new neural data
+    acquire_data(&mut input);
+    
+    // Compress directly into same buffer (safe!)
+    let size = compress_spike_counts(&input, &mut output_buffer, &mut workspace)?;
+    
+    // Transmit
+    transmit(&output_buffer[..size]);
+    
+    // No need to zero buffers - next compression will clean automatically
+}
+```
+
+**Why This Matters:**
+- In tight memory environments (e.g., 32KB SRAM on STM32F1), zeroing buffers wastes cycles
+- Previous versions only set bits to 1, leaving old 1s in place when writing 0s
+- This caused decompression failures that were difficult to debug
+- Now safe for production use in memory-constrained embedded systems
+
 ---
 
 ## �🔌 Integration with Phantom Suite

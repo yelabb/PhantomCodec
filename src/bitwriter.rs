@@ -10,6 +10,12 @@ use crate::error::{CodecError, CodecResult};
 /// Maintains a bit-position cursor and handles byte-boundary alignment
 /// automatically. All operations are safe and bounds-checked.
 ///
+/// # Buffer Handling
+///
+/// `BitWriter` automatically clears each byte before writing the first bit to it,
+/// making it safe to reuse buffers without manually zeroing them first. This is
+/// critical in embedded systems where buffer reuse is common to conserve RAM.
+///
 /// # Example
 /// ```
 /// # use phantomcodec::bitwriter::BitWriter;
@@ -22,16 +28,35 @@ use crate::error::{CodecError, CodecResult};
 ///
 /// assert_eq!(buffer[0], 0b10101100); // Bits written MSB first
 /// ```
+///
+/// # Buffer Reuse Safety
+/// ```
+/// # use phantomcodec::bitwriter::BitWriter;
+/// let mut buffer = [0xFF; 4]; // Dirty buffer (all 1s)
+/// let mut writer = BitWriter::new(&mut buffer);
+///
+/// writer.write_bits(0b0000, 4).unwrap();
+/// writer.write_bits(0b1111, 4).unwrap();
+/// writer.flush().unwrap();
+///
+/// assert_eq!(buffer[0], 0b0000_1111); // Correctly clears zeros
+/// ```
 pub struct BitWriter<'a> {
     buffer: &'a mut [u8],
     /// Current bit position (0 = first bit of first byte)
     bit_pos: usize,
+    /// Track which byte we last cleared (to avoid redundant clearing)
+    last_cleared_byte: Option<usize>,
 }
 
 impl<'a> BitWriter<'a> {
     /// Create a new BitWriter wrapping the given buffer
     pub fn new(buffer: &'a mut [u8]) -> Self {
-        Self { buffer, bit_pos: 0 }
+        Self {
+            buffer,
+            bit_pos: 0,
+            last_cleared_byte: None,
+        }
     }
 
     /// Get current bit position
@@ -55,6 +80,9 @@ impl<'a> BitWriter<'a> {
     }
 
     /// Write `width` bits from `value` (LSB-aligned)
+    ///
+    /// Automatically clears each byte before writing the first bit to it,
+    /// ensuring correct behavior even with dirty (reused) buffers.
     ///
     /// # Arguments
     /// * `value` - Value to write (only lowest `width` bits are used)
@@ -104,9 +132,18 @@ impl<'a> BitWriter<'a> {
                 return Err(CodecError::BitPositionOverflow);
             }
 
+            // Clear the byte before writing the first bit to it
+            // This ensures dirty buffers are properly cleaned
+            if bit_idx == 0 {
+                self.buffer[byte_idx] = 0;
+                self.last_cleared_byte = Some(byte_idx);
+            }
+
+            // Set or clear the bit
             if bit != 0 {
                 self.buffer[byte_idx] |= 1 << (7 - bit_idx);
             }
+            // Note: clearing is handled by the byte clear above
 
             self.bit_pos += 1;
         }
@@ -193,6 +230,7 @@ impl<'a> BitWriter<'a> {
     /// Reset writer to beginning of buffer
     pub fn reset(&mut self) {
         self.bit_pos = 0;
+        self.last_cleared_byte = None;
         self.buffer.fill(0);
     }
 }
@@ -383,5 +421,49 @@ mod tests {
         reader.read_bits(8).unwrap();
         let result = reader.read_bits(8);
         assert_eq!(result, Err(CodecError::UnexpectedEndOfInput));
+    }
+
+    #[test]
+    fn test_dirty_buffer_reuse() {
+        // This test ensures BitWriter properly clears dirty buffers
+        let mut buffer = [0xFF; 4]; // All bits set to 1 (dirty)
+        
+        {
+            let mut writer = BitWriter::new(&mut buffer);
+            // Write pattern with zeros: 0b0000_1111
+            writer.write_bits(0b0000, 4).unwrap();
+            writer.write_bits(0b1111, 4).unwrap();
+            writer.flush().unwrap();
+        } // writer dropped, buffer borrow released
+
+        // First byte should be exactly 0b0000_1111, not 0b1111_1111
+        assert_eq!(buffer[0], 0b0000_1111, "BitWriter must clear zeros, not just set ones");
+
+        // Verify we can reuse the same buffer
+        {
+            let mut writer = BitWriter::new(&mut buffer);
+            writer.reset();
+            writer.write_bits(0b1010, 4).unwrap();
+            writer.write_bits(0b0101, 4).unwrap();
+            writer.flush().unwrap();
+        }
+
+        assert_eq!(buffer[0], 0b1010_0101);
+    }
+
+    #[test]
+    fn test_partial_byte_dirty_buffer() {
+        // Test that partial byte writes properly clear bits
+        let mut buffer = [0xFF; 2]; // Dirty buffer
+        
+        {
+            let mut writer = BitWriter::new(&mut buffer);
+            // Write only 3 bits: 0b101
+            writer.write_bits(0b101, 3).unwrap();
+            writer.flush().unwrap(); // Pads with zeros
+        }
+
+        // First byte should be 0b101_00000, not 0b101_11111
+        assert_eq!(buffer[0], 0b1010_0000);
     }
 }
