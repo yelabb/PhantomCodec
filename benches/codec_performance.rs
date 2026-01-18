@@ -290,7 +290,8 @@ fn bench_fixed_4bit_encoding(c: &mut Criterion) {
                         black_box(&encoded),
                         black_box(num_channels),
                         black_box(&mut decoded),
-                    ).unwrap();
+                    )
+                    .unwrap();
                 });
             },
         );

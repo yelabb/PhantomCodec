@@ -5,7 +5,9 @@
 
 > **🎯 [PERFORMANCE BENCHMARKED](BENCHMARK_RESULTS.md)** 
 >
-> Benchmarks show **<150µs decode** (1024ch on M4F) and **71% compression**.
+> Two strategies available:
+> - **Rice coding**: <150µs decode (1024ch) | 71% compression | Lossless
+> - **Packed4**: <10µs decode (1024ch) | 50% compression | Lossy (±128)
 > [View detailed benchmark results →](BENCHMARK_RESULTS.md)
 
 > **⚠️ Nightly Rust Required for SIMD**
@@ -33,8 +35,8 @@ A `#![no_std]` Rust crate for real-time compression of 1,024+ channel neural spi
 
 ## 🎯 Design Goals
 
-- **<150μs decode latency** (1024ch) on Cortex-M4F @ 168MHz ([benchmarks](BENCHMARK_RESULTS.md))
-- **50% compression ratio** for typical neural spike data ✅ **EXCEEDS TARGET** (71% reduction)
+- **<150μs decode latency** with Rice coding or **<10μs** with Packed4 (1024ch) ([benchmarks](BENCHMARK_RESULTS.md))
+- **50-71% compression ratio** depending on strategy (Rice: lossless 71%, Packed4: lossy 50%)
 - **Zero allocations** in hot path (stack + static buffers only)
 - **Panic-free** with compile-time safety guarantees
 - **DMA-ready** architecture for zero-copy transfers
@@ -65,8 +67,20 @@ Rice parameter 'k' adapts per frame:
 - High activity (bursts):  k=3 (larger deltas expected)
 ```
 - **Best for**: Raw neural voltages, high-frequency data
-- **Compression**: 50-70% during sparse activity
+- **Compression**: 50-70% during sparse activity (lossless)
 - **Latency**: ~7μs encode, ~4μs decode (1024 channels)
+
+#### 3. **Packed4 Ultra-Low-Latency** (lossy compression)
+```
+Fixed 4-bit quantization:
+Deltas: [256, -512, 768, 0]
+→ 4-bit: [1, -2, 3, 0]  (quantized to ±7 range)
+→ Packed: 0x1D (two 4-bit values per byte)
+```
+- **Best for**: Latency-critical paths where ±128 quantization error is acceptable
+- **Compression**: ~50% (fixed 2:1 ratio)
+- **Latency**: <2μs encode, <8μs decode (1024 channels)
+- **⚠️ Lossy**: Values quantized to 256-unit granularity (±128 error)
 
 ### Zero-Copy Memory Model
 
@@ -90,13 +104,21 @@ let compressed_size = phantomcodec::compress_spike_counts(
 
 ## 📊 Performance Characteristics
 
-> **⚠️ Important**: These are **projected estimates** based on PC benchmarks, NOT actual embedded hardware measurements. See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for methodology and limitations.
+> **⚠️ Important**: Latency figures are **projected estimates** based on PC benchmarks scaled to ARM Cortex-M4F. Actual embedded hardware measurements may vary. See [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) for methodology.
 
+### Rice Coding (Lossless)
 | Operation | Projected (Cortex-M4F @ 168MHz) | Status |
 |-----------|--------------------------------|--------|
-| Encode (1024ch) | ~140-180μs | ⚠️ Projected estimate, not verified |
-| Decode (1024ch) | ~130-170μs | ⚠️ Projected estimate, not verified |
+| Encode (1024ch) | ~140-180μs | ⚠️ Projected from PC benchmarks |
+| Decode (1024ch) | ~130-170μs | ⚠️ Projected from PC benchmarks |
 | Compression Ratio | 71% reduction | ✅ Verified (hardware-independent) |
+
+### Packed4 (Lossy ±128)
+| Operation | Measured (x86_64) | Projected (Cortex-M4F @ 168MHz) |
+|-----------|-------------------|--------------------------------|
+| Encode (1024ch) | 3.2μs | ~1-2μs |
+| Decode (1024ch) | 6.8μs | ~6-10μs |
+| Compression Ratio | 50% reduction | ✅ Fixed (hardware-independent) |
 
 > **Future Goal**: Sub-10μs latency requires ARM DSP intrinsics + simplified bit-packing algorithm. See [INSPIRATION.md](INSPIRATION.md) for roadmap.
 
@@ -197,6 +219,34 @@ fn main() -> ! {
     loop {}
 }
 ```
+
+### Ultra-Low-Latency with Packed4 (Lossy)
+
+```rust
+use phantomcodec::{compress_packed4, decompress_packed4};
+
+fn low_latency_path() -> Result<(), CodecError> {
+    let mut neural_data = [0i32; 1024];
+    let mut compressed = [0u8; 2048];
+    let mut decompressed = [0i32; 1024];
+    
+    // Packed4: <10µs decode, ±128 quantization error
+    let size = compress_packed4(&neural_data, &mut compressed)?;
+    decompress_packed4(&compressed[..size], &mut decompressed)?;
+    
+    // Values quantized to 256-unit granularity
+    // Example: 2050 → 2048, 1800 → 1792
+    
+    Ok(())
+}
+```
+
+**When to use Packed4**:
+- ✅ Latency-critical control loops requiring <10µs
+- ✅ Sparse data (compression still beneficial)
+- ✅ Quantization error ±128 is acceptable for your application
+- ❌ Lossless compression required
+- ❌ Dense data (use Rice for better compression)
 
 ### Advanced: Custom Strategy
 

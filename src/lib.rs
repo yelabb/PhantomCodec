@@ -342,10 +342,8 @@ pub fn compress_packed4(
     let payload_start = PacketHeader::SIZE;
 
     // Encode deltas with 4-bit packing
-    let payload_size = simd::encode_fixed_4bit(
-        &workspace[..input.len()],
-        &mut output[payload_start..],
-    )?;
+    let payload_size =
+        simd::encode_fixed_4bit(&workspace[..input.len()], &mut output[payload_start..])?;
 
     Ok(payload_start + payload_size)
 }
@@ -544,25 +542,21 @@ mod tests {
 
         let size = compress_packed4(&original, &mut compressed, &mut workspace).unwrap();
         assert!(size > 0);
-        
+
         // Verify compression ratio (should be ~50%)
         let header_size = 8;
         let expected_payload = original.len().div_ceil(2);
         assert_eq!(size, header_size + expected_payload);
 
-        let count = decompress_packed4(&compressed[..size], &mut decompressed, &mut workspace)
-            .unwrap();
+        let count =
+            decompress_packed4(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 8);
 
         // All values should be quantized to multiples of 256 (due to delta quantization)
         for &value in decompressed.iter().take(original.len()) {
-            assert_eq!(
-                value % 256,
-                0,
-                "Packed4 quantizes to 256-unit granularity"
-            );
+            assert_eq!(value % 256, 0, "Packed4 quantizes to 256-unit granularity");
         }
-        
+
         // Verify values are reconstructed correctly (with quantization)
         assert_eq!(decompressed, original, "Values chosen are multiples of 256");
     }

@@ -284,7 +284,7 @@ fn sum_abs_deltas_simd(deltas: &[i32]) -> u32 {
 #[cfg(feature = "cortex-m-dsp")]
 pub mod cortex_m_dsp {
     use crate::error::{CodecError, CodecResult};
-    
+
     #[cfg(target_arch = "arm")]
     use core::arch::arm::{__qadd16, __qsub16, __sadd16, __ssub16, __usad8};
 
@@ -483,7 +483,7 @@ pub mod cortex_m_dsp {
     pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) -> CodecResult<usize> {
         #[allow(clippy::manual_div_ceil)] // div_ceil is unstable, need stable Rust support
         let out_len = (deltas.len() + 1) / 2;
-        
+
         if output.len() < out_len {
             return Err(CodecError::BufferTooSmall { required: out_len });
         }
@@ -504,7 +504,7 @@ pub mod cortex_m_dsp {
             let d = ((deltas[deltas.len() - 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
             output[pairs] = d;
         }
-        
+
         Ok(out_len)
     }
 
@@ -531,9 +531,15 @@ pub mod cortex_m_dsp {
     /// let mut reconstructed = vec![0i32; original.len()];
     /// reconstruct_from_deltas(&decoded_deltas, &mut reconstructed);
     /// ```
-    pub fn decode_fixed_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) -> CodecResult<usize> {
+    pub fn decode_fixed_4bit(
+        input: &[u8],
+        sample_count: usize,
+        output: &mut [i32],
+    ) -> CodecResult<usize> {
         if output.len() < sample_count {
-            return Err(CodecError::BufferTooSmall { required: sample_count });
+            return Err(CodecError::BufferTooSmall {
+                required: sample_count,
+            });
         }
 
         let pairs = sample_count / 2;
@@ -555,7 +561,7 @@ pub mod cortex_m_dsp {
             let d = ((input[pairs] & 0x0F) as i8) << 4 >> 4;
             output[sample_count - 1] = (d as i32) << 8;
         }
-        
+
         Ok(sample_count)
     }
 }
@@ -571,7 +577,7 @@ pub use cortex_m_dsp::{
 #[cfg(not(feature = "cortex-m-dsp"))]
 mod portable {
     use crate::error::{CodecError, CodecResult};
-    
+
     /// Ultra-fast 4-bit fixed-width encoding (Portable, Stable Rust)
     ///
     /// **Lossy**: Quantizes deltas to ±128 range (divides by 256, clamps to 4-bit signed)
@@ -580,7 +586,7 @@ mod portable {
     pub fn encode_fixed_4bit(deltas: &[i32], output: &mut [u8]) -> CodecResult<usize> {
         #[allow(clippy::manual_div_ceil)]
         let out_len = (deltas.len() + 1) / 2;
-        
+
         if output.len() < out_len {
             return Err(CodecError::BufferTooSmall { required: out_len });
         }
@@ -597,16 +603,22 @@ mod portable {
             let d = ((deltas[deltas.len() - 1] >> 8).clamp(-8, 7) & 0x0F) as u8;
             output[pairs] = d;
         }
-        
+
         Ok(out_len)
     }
 
     /// Ultra-fast 4-bit fixed-width decoding (Portable, Stable Rust)
     ///
     /// Returns the number of samples decoded.
-    pub fn decode_fixed_4bit(input: &[u8], sample_count: usize, output: &mut [i32]) -> CodecResult<usize> {
+    pub fn decode_fixed_4bit(
+        input: &[u8],
+        sample_count: usize,
+        output: &mut [i32],
+    ) -> CodecResult<usize> {
         if output.len() < sample_count {
-            return Err(CodecError::BufferTooSmall { required: sample_count });
+            return Err(CodecError::BufferTooSmall {
+                required: sample_count,
+            });
         }
 
         let pairs = sample_count / 2;
@@ -623,7 +635,7 @@ mod portable {
             let d = ((input[pairs] & 0x0F) as i8) << 4 >> 4;
             output[sample_count - 1] = (d as i32) << 8;
         }
-        
+
         Ok(sample_count)
     }
 }

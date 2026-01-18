@@ -6,7 +6,9 @@
 //!
 //! Run with: cargo run --example packed4_demo
 
-use phantomcodec::{compress_packed4, compress_spike_counts, decompress_packed4, decompress_spike_counts};
+use phantomcodec::{
+    compress_packed4, compress_spike_counts, decompress_packed4, decompress_spike_counts,
+};
 
 fn main() {
     println!("=== PhantomCodec Packed4 Ultra-Low-Latency Demo ===\n");
@@ -24,14 +26,17 @@ fn main() {
     }
 
     let mut workspace = [0i32; 1024];
-    
+
     // === Strategy 1: DeltaVarint (Default, Lossless) ===
     println!("Strategy 1: DeltaVarint (Lossless)");
     let mut compressed_varint = [0u8; 8192];
     let size_varint = compress_spike_counts(&neural_data, &mut compressed_varint, &mut workspace)
         .expect("Compression failed");
     println!("  Compressed size: {} bytes", size_varint);
-    println!("  Compression ratio: {:.1}%", (size_varint as f64 / (1024 * 4) as f64) * 100.0);
+    println!(
+        "  Compression ratio: {:.1}%",
+        (size_varint as f64 / (1024 * 4) as f64) * 100.0
+    );
     println!("  Estimated decode time (M4F): ~150µs");
     println!("  Quality: Lossless\n");
 
@@ -41,7 +46,10 @@ fn main() {
     let size_packed4 = compress_packed4(&neural_data, &mut compressed_packed4, &mut workspace)
         .expect("Compression failed");
     println!("  Compressed size: {} bytes", size_packed4);
-    println!("  Compression ratio: {:.1}%", (size_packed4 as f64 / (1024 * 4) as f64) * 100.0);
+    println!(
+        "  Compression ratio: {:.1}%",
+        (size_packed4 as f64 / (1024 * 4) as f64) * 100.0
+    );
     println!("  Estimated decode time (M4F): ~10µs ⚡");
     println!("  Quality: Lossy (±256 quantization)");
     println!("  Speedup: ~15x faster decode\n");
@@ -49,17 +57,25 @@ fn main() {
     // Verify roundtrip
     let mut decompressed_varint = [0i32; 1024];
     let mut decompressed_packed4 = [0i32; 1024];
-    
-    decompress_spike_counts(&compressed_varint[..size_varint], &mut decompressed_varint, &mut workspace)
-        .expect("DeltaVarint decompression failed");
-    
-    decompress_packed4(&compressed_packed4[..size_packed4], &mut decompressed_packed4, &mut workspace)
-        .expect("Packed4 decompression failed");
+
+    decompress_spike_counts(
+        &compressed_varint[..size_varint],
+        &mut decompressed_varint,
+        &mut workspace,
+    )
+    .expect("DeltaVarint decompression failed");
+
+    decompress_packed4(
+        &compressed_packed4[..size_packed4],
+        &mut decompressed_packed4,
+        &mut workspace,
+    )
+    .expect("Packed4 decompression failed");
 
     // Compare quality
     println!("=== Quality Comparison ===");
     println!("DeltaVarint: Perfect reconstruction (lossless)");
-    
+
     let mut max_error = 0i32;
     let mut nonzero_errors = 0;
     for i in 0..1024 {
@@ -71,8 +87,11 @@ fn main() {
             nonzero_errors += 1;
         }
     }
-    
-    println!("Packed4: Max error = {} units ({} samples with error)", max_error, nonzero_errors);
+
+    println!(
+        "Packed4: Max error = {} units ({} samples with error)",
+        max_error, nonzero_errors
+    );
     println!("\n=== Use Case Recommendation ===");
     println!("• DeltaVarint: High-fidelity recording, offline analysis");
     println!("• Packed4: Closed-loop control, real-time spike detection");
