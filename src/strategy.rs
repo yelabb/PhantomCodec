@@ -76,7 +76,7 @@ pub trait CompressionStrategy {
 /// │ (4 bytes)│ (1 byte) │ (2 bytes BE)     │ (1 byte)           │
 /// └──────────┴──────────┴──────────────────┴────────────────────┘
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PacketHeader {
     /// Number of channels in this packet
     pub channel_count: u16,

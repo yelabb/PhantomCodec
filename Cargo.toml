@@ -1,7 +1,7 @@
 [package]
 name = "phantomcodec"
 version = "0.1.0"
-edition = "2026"
+edition = "2021"
 authors = ["Phantom Team <youssef@elabbassi.com>"]
 license = "MIT"
 description = "Real-time lossless compression for high-density neural data (1,024+ channels)"
@@ -12,7 +12,7 @@ categories = ["compression", "embedded", "no-std", "science"]
 [dependencies]
 
 [dev-dependencies]
-proptest = { version = "1.4", default-features = false, features = ["alloc"] }
+# proptest = { version = "1.4", default-features = false, features = ["alloc"] }
 
 [features]
 default = ["std"]
@@ -34,10 +34,6 @@ debug = true
 [[example]]
 name = "stm32_dma_demo"
 required-features = ["cortex-m-dsp"]
-
-[[bench]]
-name = "compression_benchmark"
-harness = false
 
 [package.metadata.docs.rs]
 all-features = true

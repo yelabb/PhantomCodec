@@ -42,10 +42,8 @@ mod varint;
 pub use error::{CodecError, CodecResult};
 pub use strategy::{CompressionStrategy, PacketHeader, StrategyId};
 
-use bitwriter::BitWriter;
 use buffer::NeuralFrame;
 use simd::{compute_deltas, reconstruct_from_deltas};
-use strategy::{MAGIC_BYTES, PROTOCOL_VERSION};
 use varint::{varint_decode_array, varint_encode_array};
 
 /// High-level API: Compress spike counts using Delta + Varint encoding
@@ -79,12 +77,16 @@ pub fn compress_spike_counts(input: &[i32], output: &mut [u8]) -> CodecResult<us
     let payload_start = PacketHeader::SIZE;
 
     // Compute deltas using SIMD
+    #[cfg(feature = "std")]
+    let mut deltas = vec![0i32; input.len()];
+    #[cfg(not(feature = "std"))]
     let mut deltas = alloc_temp_buffer(input.len())?;
-    compute_deltas(input, &mut deltas[..input.len()]);
+    
+    compute_deltas(input, &mut deltas[..]);
 
     // Encode with Varint (no ZigZag for unsigned data)
     let payload_size = varint_encode_array(
-        &deltas[..input.len()],
+        &deltas[..],
         &mut output[payload_start..],
         false, // No ZigZag
     )?;
@@ -132,11 +134,15 @@ pub fn decompress_spike_counts(input: &[u8], output: &mut [i32]) -> CodecResult<
 
     // Decode deltas
     let payload = &input[PacketHeader::SIZE..];
+    #[cfg(feature = "std")]
+    let mut deltas = vec![0i32; channel_count];
+    #[cfg(not(feature = "std"))]
     let mut deltas = alloc_temp_buffer(channel_count)?;
-    varint_decode_array(payload, &mut deltas[..channel_count], false)?;
+    
+    varint_decode_array(payload, &mut deltas[..], false)?;
 
     // Reconstruct from deltas
-    reconstruct_from_deltas(&deltas[..channel_count], &mut output[..channel_count]);
+    reconstruct_from_deltas(&deltas[..], &mut output[..channel_count]);
 
     Ok(channel_count)
 }
@@ -157,12 +163,16 @@ pub fn compress_voltage(input: &[i32], output: &mut [u8]) -> CodecResult<usize> 
     let channel_count = frame.channel_count_u16()?;
 
     // Compute deltas
+    #[cfg(feature = "std")]
+    let mut deltas = vec![0i32; input.len()];
+    #[cfg(not(feature = "std"))]
     let mut deltas = alloc_temp_buffer(input.len())?;
-    compute_deltas(input, &mut deltas[..input.len()]);
+    
+    compute_deltas(input, &mut deltas[..]);
 
     // Encode with Rice (with ZigZag for signed data)
     let (payload_size, k) = rice::rice_encode_array(
-        &deltas[..input.len()],
+        &deltas[..],
         &mut output[PacketHeader::SIZE..],
         true, // Use ZigZag
     )?;
@@ -201,11 +211,15 @@ pub fn decompress_voltage(input: &[u8], output: &mut [i32]) -> CodecResult<usize
 
     // Decode deltas
     let payload = &input[PacketHeader::SIZE..];
+    #[cfg(feature = "std")]
+    let mut deltas = vec![0i32; channel_count];
+    #[cfg(not(feature = "std"))]
     let mut deltas = alloc_temp_buffer(channel_count)?;
-    rice::rice_decode_array(payload, &mut deltas[..channel_count], header.rice_k, true)?;
+    
+    rice::rice_decode_array(payload, &mut deltas[..], header.rice_k, true)?;
 
     // Reconstruct from deltas
-    reconstruct_from_deltas(&deltas[..channel_count], &mut output[..channel_count]);
+    reconstruct_from_deltas(&deltas[..], &mut output[..channel_count]);
 
     Ok(channel_count)
 }

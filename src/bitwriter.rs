@@ -271,8 +271,8 @@ impl<'a> BitReader<'a> {
             value |= ((byte & 0x7F) as u32) << shift;
             shift += 7;
 
-            if shift > 28 {
-                // Prevent overflow (max 5 bytes for u32)
+            if shift > 35 {
+                // Prevent overflow (max 5 bytes for u32 = 35 bits)
                 return Err(CodecError::BitPositionOverflow);
             }
 

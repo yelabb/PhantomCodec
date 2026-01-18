@@ -105,16 +105,17 @@ pub fn reconstruct_from_deltas(deltas: &[i32], output: &mut [i32]) {
 
     // First element is the base value
     output[0] = deltas[0];
+    let prev = output[0];
 
     // Dispatch to SIMD or scalar implementation
     #[cfg(all(feature = "simd", target_feature = "simd128"))]
     {
-        reconstruct_from_deltas_simd(&deltas[1..], &mut output[1..], output[0]);
+        reconstruct_from_deltas_simd(&deltas[1..], &mut output[1..], prev);
     }
 
     #[cfg(not(all(feature = "simd", target_feature = "simd128")))]
     {
-        reconstruct_from_deltas_scalar(&deltas[1..], &mut output[1..], output[0]);
+        reconstruct_from_deltas_scalar(&deltas[1..], &mut output[1..], prev);
     }
 }
 

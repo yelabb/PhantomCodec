@@ -4,7 +4,7 @@
 //! Each byte stores 7 bits of data; MSB indicates if more bytes follow.
 
 use crate::bitwriter::{BitReader, BitWriter};
-use crate::error::CodecResult;
+use crate::error::{CodecError, CodecResult};
 
 /// Encode array of deltas using varint encoding
 ///
@@ -51,11 +51,20 @@ pub fn varint_decode_array(
     let mut reader = BitReader::new(input);
     let mut count = 0;
 
-    while count < output.len() && reader.remaining_bits() >= 8 {
+    while count < output.len() {
+        // Try to read, break on end of input
         let value = if use_zigzag {
-            reader.read_zigzag()?
+            match reader.read_zigzag() {
+                Ok(v) => v,
+                Err(CodecError::UnexpectedEndOfInput) => break,
+                Err(e) => return Err(e),
+            }
         } else {
-            reader.read_varint()? as i32
+            match reader.read_varint() {
+                Ok(v) => v as i32,
+                Err(CodecError::UnexpectedEndOfInput) => break,
+                Err(e) => return Err(e),
+            }
         };
 
         output[count] = value;
