@@ -12,10 +12,10 @@
 
 | Channels | Decompression Time | Projected M4F @ 168MHz |
 |----------|-------------------|------------------------|
-| 128      | 336 ns            | ~30-40 µs              |
-| 256      | 984 ns            | ~60-80 µs              |
-| 512      | 1.74 µs           | ~100-130 µs            |
-| 1024     | 2.57 µs           | ~150-200 µs            |
+| 128      | 220 ns            | ~25-35 µs              |
+| 256      | 453 ns            | ~50-70 µs              |
+| 512      | 937 ns            | ~90-120 µs             |
+| 1024     | 1.86 µs           | ~130-170 µs            |
 
 **Embedded Target:** <150µs for 1024 channels on Cortex-M4F
 
@@ -31,11 +31,12 @@
 - 512 channels: **28.7%** (2048B → 588B)
 - 1024 channels: **28.5%** (4096B → 1168B)
 
-**Dense Activity (worst case - all channels firing):**
-- 1024 channels: **25.2%** compression
+**Random High-Entropy Data (true worst-case, PCG RNG):**
+- 1024 channels: **72.3%** (near-incompressible, high entropy)
+- Decode time: **3.69 µs** on PC → ~200-250µs on M4F
 
-**Random High-Entropy Data (true worst-case):**
-- Results from `cargo bench` with PCG RNG
+**Sparse Neural Data (realistic):**
+- 1024 channels: **28.5%** (71% reduction)
 
 **Status:** ✅ **Exceeds 50% compression target** (achieving ~71% reduction on realistic data)
 
@@ -94,8 +95,9 @@ For <10µs requirement: Algorithm redesign needed (bit-packing)
 
 **Decode latency budget:**
 - Available: 25ms (40Hz frame period)
-- PhantomCodec (M4F): ~150µs (0.6% of budget)
-- Remaining: 24.85ms for signal processing ✅
+- PhantomCodec (M4F, sparse): ~140µs (0.56% of budget)
+- PhantomCodec (M4F, worst): ~220µs (0.88% of budget)
+- Remaining: 24.78-24.86ms for signal processing ✅
 
 ---
 
