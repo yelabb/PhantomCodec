@@ -122,30 +122,71 @@ impl<'a> BitWriter<'a> {
         };
         let value = value & mask;
 
-        // Write bits MSB first
-        for i in (0..width).rev() {
-            let bit = ((value >> i) & 1) as u8;
-            let byte_idx = self.bit_pos / 8;
-            let bit_idx = self.bit_pos % 8;
+        // Optimized implementation: handle byte-aligned and unaligned cases separately
+        let byte_idx = self.bit_pos / 8;
+        let bit_offset = (self.bit_pos % 8) as u32;
+        let bits_in_first_byte = 8 - bit_offset;
+        
+        if byte_idx >= self.buffer.len() {
+            return Err(CodecError::BitPositionOverflow);
+        }
 
-            if byte_idx >= self.buffer.len() {
-                return Err(CodecError::BitPositionOverflow);
+        // Clear the first byte if we're at the start of it
+        if bit_offset == 0 {
+            self.buffer[byte_idx] = 0;
+            self.last_cleared_byte = Some(byte_idx);
+        }
+
+        if width as u32 <= bits_in_first_byte {
+            // Fast path: all bits fit in current byte
+            let shift = bits_in_first_byte - width as u32;
+            let byte_value = (value << shift) as u8;
+            self.buffer[byte_idx] |= byte_value;
+            self.bit_pos += width as usize;
+        } else {
+            // Bits span multiple bytes - write in chunks
+            let mut remaining_width = width as u32;
+            let mut remaining_value = value;
+            let mut current_byte = byte_idx;
+            let mut current_bit_offset = bit_offset;
+
+            while remaining_width > 0 {
+                if current_byte >= self.buffer.len() {
+                    return Err(CodecError::BitPositionOverflow);
+                }
+
+                // Clear byte if starting at beginning
+                if current_bit_offset == 0 {
+                    self.buffer[current_byte] = 0;
+                }
+
+                let bits_available = 8 - current_bit_offset;
+                let bits_to_write = remaining_width.min(bits_available);
+                
+                // Extract the bits we need from MSB side
+                let shift = remaining_width - bits_to_write;
+                let bits_mask = if bits_to_write == 32 {
+                    u32::MAX
+                } else {
+                    (1u32 << bits_to_write) - 1
+                };
+                let bits = (remaining_value >> shift) & bits_mask;
+                
+                // Position bits in the byte and write
+                let byte_shift = bits_available - bits_to_write;
+                let byte_value = (bits << byte_shift) as u8;
+                self.buffer[current_byte] |= byte_value;
+                
+                // Update state
+                remaining_width -= bits_to_write;
+                remaining_value &= (1u32 << shift) - 1; // Keep only lower bits
+                current_bit_offset = (current_bit_offset + bits_to_write) % 8;
+                if current_bit_offset == 0 {
+                    current_byte += 1;
+                }
             }
-
-            // Clear the byte before writing the first bit to it
-            // This ensures dirty buffers are properly cleaned
-            if bit_idx == 0 {
-                self.buffer[byte_idx] = 0;
-                self.last_cleared_byte = Some(byte_idx);
-            }
-
-            // Set or clear the bit
-            if bit != 0 {
-                self.buffer[byte_idx] |= 1 << (7 - bit_idx);
-            }
-            // Note: clearing is handled by the byte clear above
-
-            self.bit_pos += 1;
+            
+            self.bit_pos += width as usize;
         }
 
         Ok(())
@@ -267,22 +308,63 @@ impl<'a> BitReader<'a> {
             return Err(CodecError::UnexpectedEndOfInput);
         }
 
-        let mut value = 0u32;
-
-        for _ in 0..width {
-            let byte_idx = self.bit_pos / 8;
-            let bit_idx = self.bit_pos % 8;
-
-            if byte_idx >= self.buffer.len() {
-                return Err(CodecError::UnexpectedEndOfInput);
-            }
-
-            let bit = (self.buffer[byte_idx] >> (7 - bit_idx)) & 1;
-            value = (value << 1) | (bit as u32);
-
-            self.bit_pos += 1;
+        // Optimized implementation: handle byte-aligned and unaligned cases
+        let byte_idx = self.bit_pos / 8;
+        let bit_offset = (self.bit_pos % 8) as u32;
+        let bits_in_first_byte = 8 - bit_offset;
+        
+        if byte_idx >= self.buffer.len() {
+            return Err(CodecError::UnexpectedEndOfInput);
         }
 
+        let value = if width as u32 <= bits_in_first_byte {
+            // Fast path: all bits in current byte
+            let shift = bits_in_first_byte - width as u32;
+            let mask = if width == 8 {
+                0xFF
+            } else {
+                (1u8 << width) - 1
+            };
+            ((self.buffer[byte_idx] >> shift) & mask) as u32
+        } else {
+            // Bits span multiple bytes - read in chunks
+            let mut result = 0u32;
+            let mut remaining_width = width as u32;
+            let mut current_byte = byte_idx;
+            let mut current_bit_offset = bit_offset;
+
+            while remaining_width > 0 {
+                if current_byte >= self.buffer.len() {
+                    return Err(CodecError::UnexpectedEndOfInput);
+                }
+
+                let bits_available = 8 - current_bit_offset;
+                let bits_to_read = remaining_width.min(bits_available);
+                
+                // Extract bits from current byte
+                let shift = bits_available - bits_to_read;
+                let mask = if bits_to_read == 8 {
+                    0xFF
+                } else {
+                    (1u8 << bits_to_read) - 1
+                };
+                let bits = ((self.buffer[current_byte] >> shift) & mask) as u32;
+                
+                // Accumulate into result (MSB first)
+                result = (result << bits_to_read) | bits;
+                
+                // Update state
+                remaining_width -= bits_to_read;
+                current_bit_offset = (current_bit_offset + bits_to_read) % 8;
+                if current_bit_offset == 0 {
+                    current_byte += 1;
+                }
+            }
+            
+            result
+        };
+        
+        self.bit_pos += width as usize;
         Ok(value)
     }
 
