@@ -77,7 +77,7 @@ impl<'a> BitWriter<'a> {
 
     /// Get number of complete bytes written
     pub fn bytes_written(&self) -> usize {
-        (self.bit_pos + 7) / 8
+        self.bit_pos.div_ceil(8)
     }
 
     /// Get buffer capacity in bits
@@ -134,7 +134,7 @@ impl<'a> BitWriter<'a> {
 
         if self.remaining_bits() < width as usize {
             return Err(CodecError::BufferTooSmall {
-                required: self.bytes_written() + ((width as usize + 7) / 8),
+                required: self.bytes_written() + (width as usize).div_ceil(8),
             });
         }
 
@@ -150,7 +150,7 @@ impl<'a> BitWriter<'a> {
         let byte_idx = self.bit_pos / 8;
         let bit_offset = (self.bit_pos % 8) as u32;
         let bits_in_first_byte = 8 - bit_offset;
-        
+
         if byte_idx >= self.buffer.len() {
             return Err(CodecError::BitPositionOverflow);
         }
@@ -186,7 +186,7 @@ impl<'a> BitWriter<'a> {
 
                 let bits_available = 8 - current_bit_offset;
                 let bits_to_write = remaining_width.min(bits_available);
-                
+
                 // Extract the bits we need from MSB side
                 let shift = remaining_width - bits_to_write;
                 let bits_mask = if bits_to_write == 32 {
@@ -195,12 +195,12 @@ impl<'a> BitWriter<'a> {
                     (1u32 << bits_to_write) - 1
                 };
                 let bits = (remaining_value >> shift) & bits_mask;
-                
+
                 // Position bits in the byte and write
                 let byte_shift = bits_available - bits_to_write;
                 let byte_value = (bits << byte_shift) as u8;
                 self.buffer[current_byte] |= byte_value;
-                
+
                 // Update state
                 remaining_width -= bits_to_write;
                 remaining_value &= (1u32 << shift) - 1; // Keep only lower bits
@@ -209,7 +209,7 @@ impl<'a> BitWriter<'a> {
                     current_byte += 1;
                 }
             }
-            
+
             self.bit_pos += width as usize;
         }
 
@@ -336,7 +336,7 @@ impl<'a> BitReader<'a> {
         let byte_idx = self.bit_pos / 8;
         let bit_offset = (self.bit_pos % 8) as u32;
         let bits_in_first_byte = 8 - bit_offset;
-        
+
         if byte_idx >= self.buffer.len() {
             return Err(CodecError::UnexpectedEndOfInput);
         }
@@ -344,11 +344,7 @@ impl<'a> BitReader<'a> {
         let value = if width as u32 <= bits_in_first_byte {
             // Fast path: all bits in current byte
             let shift = bits_in_first_byte - width as u32;
-            let mask = if width == 8 {
-                0xFF
-            } else {
-                (1u8 << width) - 1
-            };
+            let mask = if width == 8 { 0xFF } else { (1u8 << width) - 1 };
             ((self.buffer[byte_idx] >> shift) & mask) as u32
         } else {
             // Bits span multiple bytes - read in chunks
@@ -364,7 +360,7 @@ impl<'a> BitReader<'a> {
 
                 let bits_available = 8 - current_bit_offset;
                 let bits_to_read = remaining_width.min(bits_available);
-                
+
                 // Extract bits from current byte
                 let shift = bits_available - bits_to_read;
                 let mask = if bits_to_read == 8 {
@@ -373,10 +369,10 @@ impl<'a> BitReader<'a> {
                     (1u8 << bits_to_read) - 1
                 };
                 let bits = ((self.buffer[current_byte] >> shift) & mask) as u32;
-                
+
                 // Accumulate into result (MSB first)
                 result = (result << bits_to_read) | bits;
-                
+
                 // Update state
                 remaining_width -= bits_to_read;
                 current_bit_offset = (current_bit_offset + bits_to_read) % 8;
@@ -384,10 +380,10 @@ impl<'a> BitReader<'a> {
                     current_byte += 1;
                 }
             }
-            
+
             result
         };
-        
+
         self.bit_pos += width as usize;
         Ok(value)
     }
@@ -533,7 +529,7 @@ mod tests {
     fn test_dirty_buffer_reuse() {
         // This test ensures BitWriter properly clears dirty buffers
         let mut buffer = [0xFF; 4]; // All bits set to 1 (dirty)
-        
+
         {
             let mut writer = BitWriter::new(&mut buffer);
             // Write pattern with zeros: 0b0000_1111
@@ -543,7 +539,10 @@ mod tests {
         } // writer dropped, buffer borrow released
 
         // First byte should be exactly 0b0000_1111, not 0b1111_1111
-        assert_eq!(buffer[0], 0b0000_1111, "BitWriter must clear zeros, not just set ones");
+        assert_eq!(
+            buffer[0], 0b0000_1111,
+            "BitWriter must clear zeros, not just set ones"
+        );
 
         // Verify we can reuse the same buffer
         {
@@ -561,7 +560,7 @@ mod tests {
     fn test_partial_byte_dirty_buffer() {
         // Test that partial byte writes properly clear bits
         let mut buffer = [0xFF; 2]; // Dirty buffer
-        
+
         {
             let mut writer = BitWriter::new(&mut buffer);
             // Write only 3 bits: 0b101

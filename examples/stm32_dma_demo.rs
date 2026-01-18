@@ -126,7 +126,7 @@ unsafe fn compress_and_transmit() -> CodecResult<usize> {
     ACTIVE_ACCUMULATOR = !ACTIVE_ACCUMULATOR;
     // __enable_irq();
     // End critical section
-    
+
     // Now we have exclusive access to the INACTIVE accumulator
     let spike_counts = if read_from_a {
         &SPIKE_COUNTS_A
@@ -143,11 +143,8 @@ unsafe fn compress_and_transmit() -> CodecResult<usize> {
 
     // Compress spike counts from the INACTIVE accumulator
     // The ISR is now safely writing to the OTHER accumulator
-    let compressed_size = compress_spike_counts(
-        spike_counts,
-        tx_buffer,
-        &mut COMPRESSION_WORKSPACE
-    )?;
+    let compressed_size =
+        compress_spike_counts(spike_counts, tx_buffer, &mut COMPRESSION_WORKSPACE)?;
 
     // Initiate DMA transmission (non-blocking)
     // HAL-specific: start_dma_transfer(tx_buffer, compressed_size);
@@ -322,7 +319,7 @@ fn setup_uart_dma() {
 // Panic Handler (Required for no_std)
 // ============================================================================
 
-#[cfg(all(not(test), not(feature = \"std\")))]
+#[cfg(all(not(test), not(feature = "std")))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     // In production: log via semihosting, then reset

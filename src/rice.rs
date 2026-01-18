@@ -2,7 +2,7 @@
 //!
 //! Golomb-Rice coding is a family of entropy coding schemes optimal for
 //! geometric distributions (common in delta-encoded neural data).
-//! 
+//!
 //! The Rice parameter `k` determines the split between unary and binary parts:
 //! - Small k (0-1): Optimized for values near 0 (sparse activity)
 //! - Large k (2-3): Optimized for larger values (burst activity)
@@ -18,12 +18,12 @@ use crate::simd::sum_abs_deltas;
 pub const MAX_RICE_K: u8 = 3;
 
 /// Maximum safe unary quotient length
-/// 
+///
 /// This prevents excessively long unary sequences that could:
 /// 1. Cause buffer overflows during encoding
 /// 2. Take excessive time to decode
 /// 3. Indicate data unsuitable for Rice coding
-/// 
+///
 /// A quotient of 255 with k=0 represents value 255,
 /// with k=3 represents value 2040 (255 << 3).
 pub const MAX_RICE_QUOTIENT: u32 = 255;
@@ -60,7 +60,7 @@ pub fn select_rice_parameter(deltas: &[i32]) -> u8 {
     }
 
     let sum = sum_abs_deltas(deltas, n);
-    
+
     if sum > HIGH_ACTIVITY_THRESHOLD {
         3 // High activity: use larger k
     } else {
@@ -90,7 +90,7 @@ pub fn select_rice_parameter(deltas: &[i32]) -> u8 {
 /// # use phantomcodec::bitwriter::BitWriter;
 /// let mut buffer = [0u8; 10];
 /// let mut writer = BitWriter::new(&mut buffer);
-/// 
+///
 /// rice_encode(&mut writer, 7, 2).unwrap();
 /// // 7 >> 2 = 1 (quotient) → unary: 01
 /// // 7 & 3 = 3 (remainder) → binary: 11
@@ -154,11 +154,7 @@ pub fn rice_decode(reader: &mut BitReader, k: u8) -> CodecResult<u32> {
     }
 
     // Decode binary remainder (k bits)
-    let remainder = if k > 0 {
-        reader.read_bits(k)?
-    } else {
-        0
-    };
+    let remainder = if k > 0 { reader.read_bits(k)? } else { 0 };
 
     // Reconstruct value
     let value = (quotient << k) | remainder;
@@ -342,7 +338,7 @@ mod tests {
 
         let (bytes_written, k) = rice_encode_array(&deltas, &mut buffer, false).unwrap();
         assert!(bytes_written > 0);
-        assert!(k >= 1 && k <= 3);
+        assert!((1..=3).contains(&k));
 
         let mut decoded = [0i32; 8];
         let count = rice_decode_array(&buffer[..bytes_written], &mut decoded, k, false).unwrap();
@@ -364,7 +360,8 @@ mod tests {
         assert_eq!(decoded, deltas);
     }
 
-    #[test]    fn test_rice_quotient_overflow_detection() {
+    #[test]
+    fn test_rice_quotient_overflow_detection() {
         // Test that values exceeding quotient limit are properly rejected
         let mut buffer = [0u8; 100];
         let mut writer = BitWriter::new(&mut buffer);
@@ -398,19 +395,23 @@ mod tests {
         // With k=1, quotient for 5000 would be 2500, exceeding limit
         // The adaptive selector might pick k=1 or k=3
         let result = rice_encode_array(&deltas, &mut buffer, false);
-        
+
         // Should either succeed (if k=3 is high enough) or fail with overflow
         if let Err(e) = result {
             assert!(matches!(e, CodecError::RiceQuotientOverflow { .. }));
         }
     }
 
-    #[test]    fn test_rice_invalid_k() {
+    #[test]
+    fn test_rice_invalid_k() {
         let mut buffer = [0u8; 10];
         let mut writer = BitWriter::new(&mut buffer);
 
         let result = rice_encode(&mut writer, 7, 5); // k=5 is invalid
-        assert!(matches!(result, Err(CodecError::InvalidRiceParameter { k: 5 })));
+        assert!(matches!(
+            result,
+            Err(CodecError::InvalidRiceParameter { k: 5 })
+        ));
     }
 
     #[test]

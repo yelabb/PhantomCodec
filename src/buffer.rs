@@ -242,7 +242,7 @@ mod tests {
     fn test_neural_frame() {
         let data = [1, 2, 3, 4, 5];
         let frame = NeuralFrame::new(&data);
-        
+
         assert_eq!(frame.len(), 5);
         assert!(!frame.is_empty());
         assert_eq!(frame.as_slice(), &data);
@@ -253,7 +253,7 @@ mod tests {
     fn test_neural_frame_empty() {
         let data: [i32; 0] = [];
         let frame = NeuralFrame::new(&data);
-        
+
         assert_eq!(frame.len(), 0);
         assert!(frame.is_empty());
     }
@@ -262,11 +262,11 @@ mod tests {
     fn test_compressed_packet() {
         let mut buffer = [0u8; 100];
         let mut packet = CompressedPacket::new(&mut buffer);
-        
+
         assert_eq!(packet.capacity(), 100);
         assert_eq!(packet.bytes_written(), 0);
         assert_eq!(packet.remaining(), 100);
-        
+
         packet.advance(50).unwrap();
         assert_eq!(packet.bytes_written(), 50);
         assert_eq!(packet.remaining(), 50);
@@ -276,7 +276,7 @@ mod tests {
     fn test_compressed_packet_overflow() {
         let mut buffer = [0u8; 10];
         let mut packet = CompressedPacket::new(&mut buffer);
-        
+
         let result = packet.advance(20);
         assert!(matches!(result, Err(CodecError::BufferTooSmall { .. })));
     }
@@ -287,10 +287,10 @@ mod tests {
         // Write some test data
         buffer[0] = 1;
         buffer[1] = 2;
-        
+
         let mut packet = CompressedPacket::new(&mut buffer);
         packet.advance(2).unwrap();
-        
+
         let (written, remaining) = packet.split();
         assert_eq!(written, &[1, 2]);
         assert_eq!(remaining.len(), 98);
@@ -300,10 +300,10 @@ mod tests {
     fn test_compressed_input() {
         let data = [1, 2, 3, 4, 5];
         let mut input = CompressedInput::new(&data);
-        
+
         assert_eq!(input.len(), 5);
         assert_eq!(input.remaining(), 5);
-        
+
         let byte = input.read_u8().unwrap();
         assert_eq!(byte, 1);
         assert_eq!(input.position(), 1);
@@ -314,7 +314,7 @@ mod tests {
     fn test_compressed_input_read_bytes() {
         let data = [1, 2, 3, 4, 5];
         let mut input = CompressedInput::new(&data);
-        
+
         let bytes = input.read_bytes(3).unwrap();
         assert_eq!(bytes, &[1, 2, 3]);
         assert_eq!(input.remaining(), 2);
@@ -324,7 +324,7 @@ mod tests {
     fn test_compressed_input_underflow() {
         let data = [1, 2, 3];
         let mut input = CompressedInput::new(&data);
-        
+
         let result = input.read_bytes(5);
         assert_eq!(result, Err(CodecError::UnexpectedEndOfInput));
     }
@@ -333,11 +333,11 @@ mod tests {
     fn test_compressed_input_peek() {
         let data = [1, 2, 3];
         let mut input = CompressedInput::new(&data);
-        
+
         let peeked = input.peek_u8().unwrap();
         assert_eq!(peeked, 1);
         assert_eq!(input.position(), 0); // Position unchanged
-        
+
         let read = input.read_u8().unwrap();
         assert_eq!(read, 1);
         assert_eq!(input.position(), 1);
