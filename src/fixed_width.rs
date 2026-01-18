@@ -16,6 +16,8 @@
 //! - **SIMD-Friendly:** Predictable memory access patterns
 //! - **Target Latency:** <10µs for 1024 channels on Cortex-M4F @ 168MHz
 
+#![allow(clippy::manual_div_ceil)] // div_ceil is nightly-only feature
+
 use crate::error::{CodecError, CodecResult};
 
 /// Block size for fixed-width packing (32 samples)
@@ -95,9 +97,10 @@ pub fn zigzag_decode(n: u32) -> i32 {
 ///
 /// # Returns
 /// Number of bytes written
+#[allow(clippy::needless_range_loop)] // Bit manipulation requires indexed access
 pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> CodecResult<usize> {
     let count = deltas.len().min(BLOCK_SIZE);
-    
+
     // Validate bit width is in supported range
     if bit_width > 16 {
         return Err(CodecError::UnexpectedEndOfInput); // Best fit for invalid parameter
@@ -106,9 +109,11 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
     // Calculate required output size: 1 byte header + packed data
     let bits_needed = (bit_width as usize) * count;
     let bytes_needed = 1 + (bits_needed + 7) / 8; // +7 for ceiling division
-    
+
     if output.len() < bytes_needed {
-        return Err(CodecError::BufferTooSmall { required: bytes_needed });
+        return Err(CodecError::BufferTooSmall {
+            required: bytes_needed,
+        });
     }
 
     // Zero the output buffer region to ensure clean bit operations
@@ -126,11 +131,11 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
 
     // Pack samples using bit-level packing
     let mut bit_pos = 0usize; // Current bit position in output (relative to byte 1)
-    
+
     for i in 0..count {
         let zigzag = zigzag_encode(deltas[i]);
         let value = zigzag & ((1u32 << bit_width) - 1); // Mask to bit_width
-        
+
         // Write value bit by bit
         for bit in 0..bit_width {
             let bit_value = (value >> bit) & 1;
@@ -155,6 +160,7 @@ pub fn encode_block_32(deltas: &[i32], bit_width: u8, output: &mut [u8]) -> Code
 ///
 /// # Returns
 /// Number of bytes consumed from input
+#[allow(clippy::needless_range_loop)] // Simple indexed access for zero initialization
 pub fn decode_block_32(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
     if input.is_empty() {
         return Err(CodecError::UnexpectedEndOfInput);
@@ -187,20 +193,21 @@ pub fn decode_block_32(input: &[u8], count: usize, output: &mut [i32]) -> CodecR
 }
 
 /// Specialized decoder for 4-bit width (8 samples per 32-bit word)
+#[allow(clippy::needless_range_loop)] // Indexed access needed for bit manipulation
 fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
     let bits_needed = 4 * count;
     let bytes_needed = 1 + (bits_needed + 7) / 8;
-    
+
     if input.len() < bytes_needed {
         return Err(CodecError::UnexpectedEndOfInput);
     }
 
     let data = &input[1..];
-    
+
     for i in 0..count {
         let byte_idx = (i * 4) / 8;
         let bit_offset = (i * 4) % 8;
-        
+
         let value = if bit_offset + 4 <= 8 {
             // Value fits in single byte
             (data[byte_idx] >> bit_offset) & 0x0F
@@ -213,7 +220,7 @@ fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
             let high_bits = data[byte_idx + 1] << (8 - bit_offset);
             (low_bits | high_bits) & 0x0F
         };
-        
+
         output[i] = zigzag_decode(value as u32);
     }
 
@@ -221,15 +228,16 @@ fn decode_width_4(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
 }
 
 /// Specialized decoder for 8-bit width (4 samples per 32-bit word)
+#[allow(clippy::needless_range_loop)] // Indexed access needed for direct byte reading
 fn decode_width_8(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult<usize> {
     let bytes_needed = 1 + count;
-    
+
     if input.len() < bytes_needed {
         return Err(CodecError::UnexpectedEndOfInput);
     }
 
     let data = &input[1..];
-    
+
     for i in 0..count {
         output[i] = zigzag_decode(data[i] as u32);
     }
@@ -238,10 +246,16 @@ fn decode_width_8(input: &[u8], count: usize, output: &mut [i32]) -> CodecResult
 }
 
 /// Generic decoder for any bit width (1-16 bits)
-fn decode_width_generic(input: &[u8], count: usize, output: &mut [i32], bit_width: u8) -> CodecResult<usize> {
+#[allow(clippy::needless_range_loop)] // Indexed access required for bit-level operations
+fn decode_width_generic(
+    input: &[u8],
+    count: usize,
+    output: &mut [i32],
+    bit_width: u8,
+) -> CodecResult<usize> {
     let bits_needed = (bit_width as usize) * count;
     let bytes_needed = 1 + (bits_needed + 7) / 8;
-    
+
     if input.len() < bytes_needed {
         return Err(CodecError::UnexpectedEndOfInput);
     }
@@ -251,7 +265,7 @@ fn decode_width_generic(input: &[u8], count: usize, output: &mut [i32], bit_widt
 
     for i in 0..count {
         let mut value = 0u32;
-        
+
         // Read bit_width bits
         for bit in 0..bit_width {
             let byte_idx = bit_pos / 8;
@@ -260,7 +274,7 @@ fn decode_width_generic(input: &[u8], count: usize, output: &mut [i32], bit_widt
             value |= (bit_value as u32) << bit;
             bit_pos += 1;
         }
-        
+
         output[i] = zigzag_decode(value);
     }
 
@@ -306,7 +320,11 @@ pub fn encode_fixed_width_blocks(deltas: &[i32], output: &mut [u8]) -> CodecResu
 ///
 /// # Returns
 /// Number of bytes consumed
-pub fn decode_fixed_width_blocks(input: &[u8], sample_count: usize, output: &mut [i32]) -> CodecResult<usize> {
+pub fn decode_fixed_width_blocks(
+    input: &[u8],
+    sample_count: usize,
+    output: &mut [i32],
+) -> CodecResult<usize> {
     let mut total_bytes = 0;
     let mut samples_decoded = 0;
     let num_blocks = (sample_count + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -332,10 +350,12 @@ pub fn decode_fixed_width_blocks(input: &[u8], sample_count: usize, output: &mut
 mod tests {
     use super::*;
 
+    #[allow(clippy::needless_range_loop)] // Test code clarity over micro-optimization
+
     #[test]
     fn test_zigzag_encode_decode() {
         let test_cases = [0, -1, 1, -2, 2, -100, 100, i32::MIN, i32::MAX];
-        
+
         for &value in &test_cases {
             let encoded = zigzag_encode(value);
             let decoded = zigzag_decode(encoded);
@@ -393,7 +413,7 @@ mod tests {
 
         let bit_width = calculate_bit_width(&deltas);
         let enc_size = encode_block_32(&deltas, bit_width, &mut encoded).unwrap();
-        
+
         let dec_size = decode_block_32(&encoded, 8, &mut decoded).unwrap();
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
@@ -407,7 +427,7 @@ mod tests {
 
         let bit_width = calculate_bit_width(&deltas);
         let enc_size = encode_block_32(&deltas, bit_width, &mut encoded).unwrap();
-        
+
         let dec_size = decode_block_32(&encoded, 8, &mut decoded).unwrap();
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
@@ -425,7 +445,7 @@ mod tests {
 
         let bit_width = calculate_bit_width(&deltas);
         let enc_size = encode_block_32(&deltas, bit_width, &mut encoded).unwrap();
-        
+
         let dec_size = decode_block_32(&encoded, 32, &mut decoded).unwrap();
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
@@ -444,12 +464,13 @@ mod tests {
 
         let enc_size = encode_fixed_width_blocks(&deltas, &mut encoded).unwrap();
         let dec_size = decode_fixed_width_blocks(&encoded, 70, &mut decoded).unwrap();
-        
+
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
     }
 
     #[test]
+    #[allow(clippy::needless_range_loop)] // Test code clarity
     fn test_encode_decode_varying_block_widths() {
         // Block 1: small values (low bit width)
         // Block 2: large values (high bit width)
@@ -466,7 +487,7 @@ mod tests {
 
         let enc_size = encode_fixed_width_blocks(&deltas, &mut encoded).unwrap();
         let dec_size = decode_fixed_width_blocks(&encoded, 64, &mut decoded).unwrap();
-        
+
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
     }
@@ -498,7 +519,7 @@ mod tests {
         let bit_width = calculate_bit_width(&deltas);
         let enc_size = encode_block_32(&deltas, bit_width, &mut encoded).unwrap();
         let dec_size = decode_block_32(&encoded, 1, &mut decoded).unwrap();
-        
+
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded[0], deltas[0]);
     }
@@ -512,7 +533,7 @@ mod tests {
         let bit_width = calculate_bit_width(&deltas);
         let enc_size = encode_block_32(&deltas, bit_width, &mut encoded).unwrap();
         let dec_size = decode_block_32(&encoded, 8, &mut decoded).unwrap();
-        
+
         assert_eq!(dec_size, enc_size);
         assert_eq!(decoded, deltas);
     }

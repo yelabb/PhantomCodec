@@ -538,7 +538,11 @@ pub fn decompress_fixed_width(
 
     // Decode fixed-width packed deltas into workspace
     let payload = &input[PacketHeader::SIZE..];
-    fixed_width::decode_fixed_width_blocks(payload, channel_count, &mut workspace[..channel_count])?;
+    fixed_width::decode_fixed_width_blocks(
+        payload,
+        channel_count,
+        &mut workspace[..channel_count],
+    )?;
 
     // Reconstruct original values from deltas
     reconstruct_from_deltas(&workspace[..channel_count], &mut output[..channel_count]);
@@ -573,6 +577,8 @@ pub fn decompress<S: CompressionStrategy>(input: &[u8], output: &mut [i32]) -> C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[allow(clippy::needless_range_loop)] // Test code clarity over micro-optimization
 
     #[test]
     fn test_spike_counts_roundtrip() {
@@ -739,8 +745,8 @@ mod tests {
         let size = compress_fixed_width(&original, &mut compressed, &mut workspace).unwrap();
         assert!(size > 0);
 
-        let count = decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace)
-            .unwrap();
+        let count =
+            decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 9);
         assert_eq!(original, decompressed, "FixedWidth should be lossless");
     }
@@ -763,27 +769,28 @@ mod tests {
 
         // Verify lossless roundtrip
         let mut decompressed = [0i32; 1024];
-        let count = decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace)
-            .unwrap();
+        let count =
+            decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
         assert_eq!(count, 1024);
         assert_eq!(data, decompressed);
     }
 
     #[test]
+    #[allow(clippy::needless_range_loop)] // Test code clarity
     fn test_fixed_width_varying_blocks() {
         // Test with data that produces different bit widths per block
         let mut data = [0i32; 96]; // 3 blocks of 32
-        
+
         // Block 1: small deltas (low bit width)
         for i in 0..32 {
             data[i] = 1000 + i as i32;
         }
-        
+
         // Block 2: medium deltas
         for i in 32..64 {
             data[i] = 1000 + (i as i32) * 10;
         }
-        
+
         // Block 3: large deltas
         for i in 64..96 {
             data[i] = 1000 + (i as i32) * 100;
@@ -794,9 +801,9 @@ mod tests {
         let size = compress_fixed_width(&data, &mut compressed, &mut workspace).unwrap();
 
         let mut decompressed = [0i32; 96];
-        let count = decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace)
-            .unwrap();
-        
+        let count =
+            decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+
         assert_eq!(count, 96);
         assert_eq!(data, decompressed);
     }
@@ -847,9 +854,9 @@ mod tests {
         let size = compress_fixed_width(&data, &mut compressed, &mut workspace).unwrap();
 
         let mut decompressed = [0i32; 32];
-        let count = decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace)
-            .unwrap();
-        
+        let count =
+            decompress_fixed_width(&compressed[..size], &mut decompressed, &mut workspace).unwrap();
+
         assert_eq!(count, 32);
         assert_eq!(data, decompressed);
     }
