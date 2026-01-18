@@ -174,6 +174,62 @@ pub fn rice_decode(reader: &mut BitReader, k: u8) -> CodecResult<u32> {
 ///
 /// # Returns
 /// Tuple of (bytes_written, selected_k)
+///
+/// # Artifact Risk
+/// **IMPORTANT**: When adaptive k selection chooses k=0 (quiet data) and a large
+/// movement artifact occurs (delta > [`MAX_RICE_QUOTIENT`] = 255), encoding will
+/// fail with [`CodecError::RiceQuotientOverflow`].
+///
+/// For a 12-bit ADC:
+/// - k=0: Max encodable delta is 255 (~6% of full scale)
+/// - k=1: Max encodable delta is 510 (~12% of full scale)
+/// - k=3: Max encodable delta is 2040 (~50% of full scale)
+///
+/// ## Recommended Handling Strategies:
+///
+/// 1. **Dropped Packet** (simplest):
+///    ```ignore
+///    match rice_encode_array(deltas, output, true) {
+///        Err(CodecError::RiceQuotientOverflow { .. }) => {
+///            // Log artifact event, skip this packet
+///            // System tolerates occasional data loss
+///        }
+///        Ok((size, k)) => transmit(output, size),
+///        Err(e) => handle_other_error(e),
+///    }
+///    ```
+///
+/// 2. **Fallback to Higher k** (better):
+///    ```ignore
+///    match rice_encode_array(deltas, output, true) {
+///        Err(CodecError::RiceQuotientOverflow { .. }) => {
+///            // Retry with fixed k=3
+///            let mut writer = BitWriter::new(output);
+///            for &delta in deltas {
+///                let value = zigzag_encode(delta);
+///                rice_encode(&mut writer, value, 3)?;
+///            }
+///            writer.flush()?;
+///            Ok((writer.bytes_written(), 3))
+///        }
+///        result => result,
+///    }
+///    ```
+///
+/// 3. **Uncompressed Fallback** (most robust):
+///    ```ignore
+///    match rice_encode_array(deltas, output, true) {
+///        Err(CodecError::RiceQuotientOverflow { .. }) => {
+///            // Send uncompressed with special header flag
+///            transmit_uncompressed(deltas)
+///        }
+///        result => result,
+///    }
+///    ```
+///
+/// For embedded systems with real-time constraints, Strategy 1 (dropped packet)
+/// is often acceptable since artifacts are transient and neural decoding algorithms
+/// are robust to occasional missing samples.
 pub fn rice_encode_array(
     deltas: &[i32],
     output: &mut [u8],

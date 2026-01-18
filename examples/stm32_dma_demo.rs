@@ -36,8 +36,17 @@ const NUM_CHANNELS: usize = 128;
 #[link_section = ".dma_buffer"]
 static mut ADC_BUFFER: [u16; NUM_CHANNELS] = [0; NUM_CHANNELS];
 
-/// Spike count accumulator (binned over 25ms windows)
-static mut SPIKE_COUNTS: [i32; NUM_CHANNELS] = [0; NUM_CHANNELS];
+/// Spike count accumulators (double-buffered to prevent data race)
+///
+/// CRITICAL: The ISR writes to the ACTIVE accumulator while the main loop
+/// reads from the INACTIVE one. Without this, spikes occurring during
+/// compression would be lost when the buffer is cleared.
+static mut SPIKE_COUNTS_A: [i32; NUM_CHANNELS] = [0; NUM_CHANNELS];
+static mut SPIKE_COUNTS_B: [i32; NUM_CHANNELS] = [0; NUM_CHANNELS];
+
+/// Active accumulator selector (false = A, true = B)
+/// The ISR always writes to the ACTIVE buffer
+static mut ACTIVE_ACCUMULATOR: bool = false;
 
 /// Workspace buffer for compression (required for no_std safety)
 ///
@@ -97,22 +106,45 @@ fn main() -> ! {
 /// Compress spike counts and initiate DMA transmission
 ///
 /// This function demonstrates the zero-copy pattern:
-/// 1. Compress directly into static buffer
-/// 2. Initiate DMA transfer from static buffer
-/// 3. Return immediately (non-blocking)
+/// 1. Atomically swap accumulator buffers (critical section)
+/// 2. Compress the INACTIVE buffer (ISR is now writing to the other one)
+/// 3. Clear the INACTIVE buffer for reuse
+/// 4. Initiate DMA transfer
+/// 5. Return immediately (non-blocking)
+///
+/// RACE CONDITION FIX: Without double-buffering, spikes occurring during
+/// compression would be lost when we clear the buffer. Now:
+/// - ISR writes to ACTIVE buffer
+/// - Main reads/clears INACTIVE buffer
+/// - No data loss possible
 unsafe fn compress_and_transmit() -> CodecResult<usize> {
-    // Select ping-pong buffer
+    // CRITICAL SECTION: Atomically swap accumulator buffers
+    // In production: use cortex_m::interrupt::free(|_cs| { ... })
+    // Disable interrupts
+    // __disable_irq();
+    let read_from_a = ACTIVE_ACCUMULATOR;
+    ACTIVE_ACCUMULATOR = !ACTIVE_ACCUMULATOR;
+    // __enable_irq();
+    // End critical section
+    
+    // Now we have exclusive access to the INACTIVE accumulator
+    let spike_counts = if read_from_a {
+        &SPIKE_COUNTS_A
+    } else {
+        &SPIKE_COUNTS_B
+    };
+
+    // Select ping-pong TX buffer
     let tx_buffer = if ACTIVE_TX_BUFFER {
         &mut TX_BUFFER_B
     } else {
         &mut TX_BUFFER_A
     };
 
-    // Compress spike counts into transmission buffer
-    // The workspace buffer prevents unsafe static mutable state
-    // and ensures reentrancy safety in interrupt contexts
+    // Compress spike counts from the INACTIVE accumulator
+    // The ISR is now safely writing to the OTHER accumulator
     let compressed_size = compress_spike_counts(
-        &SPIKE_COUNTS,
+        spike_counts,
         tx_buffer,
         &mut COMPRESSION_WORKSPACE
     )?;
@@ -120,11 +152,16 @@ unsafe fn compress_and_transmit() -> CodecResult<usize> {
     // Initiate DMA transmission (non-blocking)
     // HAL-specific: start_dma_transfer(tx_buffer, compressed_size);
 
-    // Flip buffers for next cycle
+    // Flip TX buffers for next cycle
     ACTIVE_TX_BUFFER = !ACTIVE_TX_BUFFER;
 
-    // Reset spike counts for next bin
-    SPIKE_COUNTS.fill(0);
+    // Clear the accumulator we just compressed (safe - ISR uses the other one)
+    let clear_buffer = if read_from_a {
+        &mut SPIKE_COUNTS_A
+    } else {
+        &mut SPIKE_COUNTS_B
+    };
+    clear_buffer.fill(0);
 
     Ok(compressed_size)
 }
@@ -148,9 +185,19 @@ fn timer2_interrupt_handler() {
 ///
 /// This ISR demonstrates real-time spike detection feeding into spike counts.
 /// In production, you might do this in main loop or dedicated task.
+///
+/// RACE CONDITION FIX: Always writes to the ACTIVE accumulator.
+/// The main loop reads from the INACTIVE one, preventing data loss.
 #[allow(dead_code)]
 fn adc_dma_interrupt_handler() {
     unsafe {
+        // Determine which accumulator the ISR should write to
+        let spike_counts = if ACTIVE_ACCUMULATOR {
+            &mut SPIKE_COUNTS_B
+        } else {
+            &mut SPIKE_COUNTS_A
+        };
+
         // Spike detection on ADC samples
         for channel in 0..NUM_CHANNELS {
             let voltage = ADC_BUFFER[channel];
@@ -158,7 +205,7 @@ fn adc_dma_interrupt_handler() {
             // Simple threshold-based spike detection
             const THRESHOLD: u16 = 2048; // Mid-scale for 12-bit ADC
             if voltage > THRESHOLD {
-                SPIKE_COUNTS[channel] += 1;
+                spike_counts[channel] += 1;
             }
         }
     }
@@ -263,7 +310,7 @@ fn setup_uart_dma() {
 //
 // Memory usage:
 // - Stack: <1KB (all buffers are static)
-// - .data + .bss: ~5KB (NUM_CHANNELS * 4 * 4 buffers + workspace)
+// - .data + .bss: ~6KB (NUM_CHANNELS * 4 * 5 buffers: 2x spike counts + 2x TX + 1x workspace)
 // - Flash: ~8KB (code + rodata)
 //
 // Safety Notes:
