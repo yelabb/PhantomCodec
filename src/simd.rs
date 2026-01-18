@@ -361,7 +361,6 @@ pub mod cortex_m_dsp {
         }
 
         let len = input.len();
-        let pairs_end = 1 + ((len - 1) / 2) * 2; // Align to pairs starting from index 1
 
         let mut i = 1;
 
@@ -463,7 +462,6 @@ pub mod cortex_m_dsp {
         }
 
         let mut total: u32 = 0;
-        let pairs_end = (n / 4) * 4;
 
         let mut i = 0;
 
