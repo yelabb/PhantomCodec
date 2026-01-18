@@ -1,0 +1,307 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v0.1.0)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Get version from tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Extract changelog for this version
+            sed -n "/^## \[${VERSION#v}\]/,/^## \[/p" CHANGELOG.md | sed '$d' > release_notes.md
+            echo "has_changelog=true" >> $GITHUB_OUTPUT
+          else
+            echo "No CHANGELOG.md found, using generic release notes"
+            echo "has_changelog=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          name: PhantomCodec ${{ steps.get_version.outputs.version }}
+          body_path: ${{ steps.changelog.outputs.has_changelog == 'true' && 'release_notes.md' || '' }}
+          body: |
+            ## PhantomCodec ${{ steps.get_version.outputs.version }}
+            
+            Real-time lossless compression for high-density neural data (1,024+ channels)
+            
+            ### Platform Support
+            - ✅ Windows (x64, ARM64)
+            - ✅ Linux (x64, ARM64)
+            - ✅ macOS (x64, ARM64)
+            - ✅ Embedded (Cortex-M3/M4/M7, no_std)
+            
+            ### Installation
+            
+            #### From crates.io
+            ```bash
+            cargo add phantomcodec
+            ```
+            
+            #### From source
+            ```bash
+            cargo install --git https://github.com/${{ github.repository }} --tag ${{ steps.get_version.outputs.version }}
+            ```
+            
+            See [README.md](https://github.com/${{ github.repository }}/blob/main/README.md) for usage instructions.
+          draft: false
+          prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux targets
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: phantomcodec-linux-x64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            artifact_name: phantomcodec-linux-arm64
+            cross: true
+          
+          # Windows targets
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: phantomcodec-windows-x64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            artifact_name: phantomcodec-windows-arm64
+          
+          # macOS targets
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: phantomcodec-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: phantomcodec-macos-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools
+        if: matrix.cross
+        run: cargo install cross
+
+      - name: Build release binary
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }}
+          else
+            cargo build --release --target ${{ matrix.target }}
+          fi
+        shell: bash
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          mkdir -p package/lib
+          
+          # Copy library files
+          cp libphantomcodec.a package/lib/ 2>/dev/null || true
+          cp libphantomcodec.so package/lib/ 2>/dev/null || true
+          cp libphantomcodec.dylib package/lib/ 2>/dev/null || true
+          
+          cd ../../../
+          
+          # Copy headers (create public C header if needed)
+          mkdir -p package/include
+          echo "// PhantomCodec C API" > package/include/phantomcodec.h
+          echo "// See documentation for Rust API" >> package/include/phantomcodec.h
+          
+          # Copy documentation
+          cp README.md LICENSE package/
+          cp CHANGELOG.md package/ 2>/dev/null || true
+          
+          # Create tarball
+          tar -czf ${{ matrix.artifact_name }}.tar.gz -C package .
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd target\${{ matrix.target }}\release
+          New-Item -ItemType Directory -Path package\lib -Force
+          
+          # Copy library files
+          Copy-Item phantomcodec.lib package\lib\ -ErrorAction SilentlyContinue
+          Copy-Item phantomcodec.dll package\lib\ -ErrorAction SilentlyContinue
+          
+          cd ..\..\..
+          
+          # Copy headers
+          New-Item -ItemType Directory -Path package\include -Force
+          "// PhantomCodec C API" | Out-File -FilePath package\include\phantomcodec.h
+          "// See documentation for Rust API" | Add-Content -Path package\include\phantomcodec.h
+          
+          # Copy documentation
+          Copy-Item README.md, LICENSE package\ -ErrorAction SilentlyContinue
+          Copy-Item CHANGELOG.md package\ -ErrorAction SilentlyContinue
+          
+          # Create ZIP
+          Compress-Archive -Path package\* -DestinationPath ${{ matrix.artifact_name }}.zip
+
+      - name: Upload Release Asset (Unix)
+        if: runner.os != 'Windows'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ${{ matrix.artifact_name }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Asset (Windows)
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: ${{ matrix.artifact_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates-io:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [create-release, build-binaries]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify version matches tag
+        run: |
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          TAG_VERSION=${{ needs.create-release.outputs.version }}
+          TAG_VERSION=${TAG_VERSION#v}
+          
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "Error: Cargo.toml version ($CARGO_VERSION) does not match tag version ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} --allow-dirty
+        continue-on-error: true  # Don't fail if already published
+
+  build-docs:
+    name: Build and Deploy Documentation
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
+
+      - name: Add index redirect
+        run: echo '<meta http-equiv="refresh" content="0; url=phantomcodec/index.html">' > target/doc/index.html
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        if: github.event_name == 'push'
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./target/doc
+          force_orphan: true
+
+  embedded-artifacts:
+    name: Embedded Target Artifacts
+    runs-on: ubuntu-latest
+    needs: create-release
+    strategy:
+      matrix:
+        target:
+          - thumbv7em-none-eabihf  # Cortex-M4F/M7F
+          - thumbv7m-none-eabi     # Cortex-M3
+          - thumbv8m.main-none-eabihf  # Cortex-M33
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build for ${{ matrix.target }}
+        run: cargo build --target ${{ matrix.target }} --no-default-features --release
+
+      - name: Install cargo-binutils
+        run: |
+          cargo install cargo-binutils
+          rustup component add llvm-tools-preview
+
+      - name: Generate size report
+        run: |
+          cargo size --target ${{ matrix.target }} --no-default-features --release > size_report_${{ matrix.target }}.txt
+          cat size_report_${{ matrix.target }}.txt
+
+      - name: Package embedded artifacts
+        run: |
+          mkdir -p embedded_package
+          cp target/${{ matrix.target }}/release/libphantomcodec.a embedded_package/
+          cp size_report_${{ matrix.target }}.txt embedded_package/
+          cp README.md LICENSE embedded_package/
+          tar -czf phantomcodec-${{ matrix.target }}.tar.gz -C embedded_package .
+
+      - name: Upload embedded artifacts
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-release.outputs.version }}
+          files: phantomcodec-${{ matrix.target }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

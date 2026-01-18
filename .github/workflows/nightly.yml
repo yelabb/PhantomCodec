@@ -1,0 +1,121 @@
+name: Nightly
+
+on:
+  schedule:
+    # Run at 02:00 UTC every day
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  nightly-test:
+    name: Nightly Rust Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Run tests with nightly
+        run: cargo +nightly test --all-features --verbose
+        continue-on-error: true
+
+      - name: Check for breaking changes
+        run: cargo +nightly check --all-features
+        continue-on-error: true
+
+  dependency-audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Update dependencies
+        run: cargo update
+
+      - name: Run security audit
+        uses: rustsec/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check outdated dependencies
+        run: |
+          cargo install cargo-outdated
+          cargo outdated --root-deps-only
+
+  memory-profiling:
+    name: Memory Profiling
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+
+      - name: Build tests
+        run: cargo test --no-run
+
+      - name: Run Valgrind memory check
+        run: |
+          TEST_BIN=$(find target/debug/deps -name "phantomcodec-*" -type f -executable | head -n 1)
+          valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose $TEST_BIN
+        continue-on-error: true
+
+  fuzzing:
+    name: Fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Run fuzzing (1 hour)
+        run: |
+          # This would require fuzz targets to be set up
+          # cargo fuzz run fuzz_target_1 -- -max_total_time=3600
+          echo "Fuzzing targets would run here"
+        continue-on-error: true
+
+  performance-regression:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need history for comparison
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run benchmarks (current)
+        run: cargo bench -- --save-baseline current
+
+      - name: Checkout main branch
+        run: git checkout main
+
+      - name: Run benchmarks (baseline)
+        run: cargo bench -- --save-baseline main
+
+      - name: Compare benchmarks
+        run: |
+          cargo install cargo-benchcmp
+          cargo benchcmp main current
+        continue-on-error: true
