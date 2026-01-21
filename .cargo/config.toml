@@ -1,0 +1,8 @@
+# Build configuration for ARM Cortex-M55/M85 with Helium (MVE)
+
+[target.thumbv8.1m.main-none-eabihf]
+rustflags = ["-C", "target-feature=+mve,+mve.fp"]
+
+# For QEMU MVE emulation testing
+[target.'cfg(all(target_arch = "arm", target_feature = "mve"))']
+runner = "qemu-system-arm -cpu cortex-m55 -machine mps3-an547 -nographic -semihosting-config enable=on,target=native -kernel"

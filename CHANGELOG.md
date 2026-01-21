@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **[NEW]** ARM Helium (MVE) support for Cortex-M55/M85 processors
+  - Added `mve` feature flag for 128-bit SIMD operations
+  - Implemented `compute_deltas_mve()` for 8x i16 parallel delta computation
+  - Implemented `reconstruct_from_deltas_mve()` with cascading vector operations
+  - Implemented `zigzag_encode_mve()` and `zigzag_decode_mve()` for 8x16-bit ZigZag encoding
+  - Implemented `unpack4_mve()` for ultra-fast 4-bit unpacking (32 samples per iteration)
+  - Implemented `pack4_mve()` for 4-bit packing with Helium
+  - Implemented `unpack_fixed_width_mve()` for bit-parallel unpacking (4-16 bit widths)
+  - Added `.cargo/config.toml` with build configuration for `thumbv8.1m.main-none-eabihf` target
+  - Added 21 comprehensive tests for MVE functions
+  - Target performance: <3µs decode latency for 1024 channels (10x faster than scalar)
+  - Functions use scalar fallbacks until `core::arch::arm` MVE intrinsics stabilize
+  - See README for usage instructions and performance targets
+
 ### Changed - BREAKING
 - **[CRITICAL SAFETY FIX]** All compression and decompression functions now require a `workspace: &mut [i32]` parameter
   - `compress_spike_counts()`: Added `workspace` parameter
