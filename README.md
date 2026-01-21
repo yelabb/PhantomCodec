@@ -1,4 +1,4 @@
-# PhantomCodec
+# PhantomZip
 > **🚧 Work In Progress: Active Engineering Sprint**
 >
 > This project is currently under active development. Not yet ready for stable production.
@@ -35,13 +35,13 @@ A `#![no_std]` Rust crate for real-time compression of 1,024+ channel neural spi
 
 ## 🔗 Part of the Phantom Stack
 
-PhantomCodec is one component of the **Phantom Stack**, an integrated ecosystem for real-time brain-computer interface (BCI) research and development:
+PhantomZip is one component of the **Phantom Stack**, an integrated ecosystem for real-time brain-computer interface (BCI) research and development:
 
 | Repository | Description | Language |
 |------------|-------------|----------|
 | **[PhantomX](https://github.com/yelabb/PhantomX)** | Experimental ML research platform for neural decoding algorithms and model development | Python |
 | **[PhantomCore](https://github.com/yelabb/PhantomCore)** | High-performance C++ signal processing library for neural decoding (Kalman filters, spike detection, SIMD optimizations) | C++ |
-| **[PhantomCodec](https://github.com/yelabb/PhantomCodec)** ← *You are here* | Ultra-low latency neural data compression codec optimized for embedded systems and real-time streaming | Rust |
+| **[PhantomZip](https://github.com/yelabb/PhantomZip)** ← *You are here* | Ultra-low latency neural data compression codec optimized for embedded systems and real-time streaming | Rust |
 | **[PhantomLink](https://github.com/yelabb/PhantomLink)** | Python backend server for neural data streaming, dataset management, and WebSocket communication | Python |
 | **[PhantomLoop](https://github.com/yelabb/PhantomLoop)** | Real-time web-based visualization dashboard for BCI decoder testing and validation | TypeScript/React |
 
