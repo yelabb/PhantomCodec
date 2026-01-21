@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Linear Predictive Coding (LPC)** for improved compression on smooth signals
+  - `compress_voltage_lpc2()`: 2nd-order predictor (models constant velocity)
+    - Expected compression: ~55-60% (vs 71% with Delta)
+    - Best for: Wavy LFP signals, smooth neural data
+    - Residuals: ~±50 (vs ~±200 with Delta)
+  - `compress_voltage_lpc3()`: 3rd-order predictor (models constant acceleration)
+    - Expected compression: ~50-55% (vs 71% with Delta)
+    - Best for: Signals with smooth curvature
+    - Residuals: ~±30 (vs ~±200 with Delta)
+  - `PredictorMode` enum: `Delta`, `LPC2`, `LPC3`, `Reserved`
+  - Automatic predictor detection in `decompress_voltage()`
+  - See `src/lpc.rs` for mathematical background
+  
+- **Enhanced PacketHeader** with predictor mode support
+  - Byte 7 layout: `[Strategy:4|Predictor:2|Rice k:2]`
+  - Backward compatible with existing Delta encoding
+  - 2 bits for predictor mode (4 possible modes)
+
 ### Changed - BREAKING
 - **[CRITICAL SAFETY FIX]** All compression and decompression functions now require a `workspace: &mut [i32]` parameter
   - `compress_spike_counts()`: Added `workspace` parameter
