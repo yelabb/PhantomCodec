@@ -515,11 +515,20 @@ MIT License - see [LICENSE](LICENSE) for details
 
 ## 🙏 Acknowledgments
 
-Built as part of the **Phantom Brain-Computer Interface Suite**:
+This project was developed with assistance from AI coding assistants and workflows:
+- Claude Opus 4.5 (Anthropic)
+- Claude Sonnet 4.5 (Anthropic)
+- Gemini 3.0 Pro (Google)
+- GPT 5.2 (OpenAI)
+
+All code was tested and validated by the author.
+
+Built as part of the **Phantom Brain-Computer Interface Stack**:
+- **PhantomX**: Python ML research platform
 - **PhantomCore**: C++ real-time neural decoders
 - **PhantomLink**: Python data acquisition and streaming
 - **PhantomLoop**: TypeScript web visualization
-- **PhantomCodec**: Rust neural data compression ← *You are here*
+- **PhantomZip**: Rust neural data compression ← *You are here*
 
 ---
 
