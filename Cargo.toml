@@ -12,7 +12,7 @@ categories = ["compression", "embedded", "no-std", "science"]
 [dependencies]
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 # proptest = { version = "1.4", default-features = false, features = ["alloc"] }
 
 [[bench]]
